@@ -1,0 +1,16 @@
+{
+  "name": "fixture_custom",
+  "font": "Arial",
+  "fontSize": 34,
+  "primaryColor": "#FFFFFF",
+  "highlightColor": "#00FFFF",
+  "outlineColor": "#000000",
+  "outlineWidth": 3,
+  "shadow": 1,
+  "bold": true,
+  "uppercase": true,
+  "position": "bottom",
+  "marginV": 96,
+  "wordsPerLine": 3,
+  "maxCharsPerLine": 28
+}

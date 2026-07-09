@@ -1,0 +1,28 @@
+{
+  "name": "videoshorts",
+  "displayName": "Гиперион",
+  "description": "Гиперион — субагентская система для нарезки и монтажа Shorts/Reels из длинных видео. 20+ агентов, Whisper, FFmpeg, dual-screen, ASS/SRT, Guardian QA.",
+  "version": "0.3.9",
+  "keywords": [
+    "hyperion",
+    "гиперион",
+    "video",
+    "shorts",
+    "reels",
+    "whisper",
+    "ffmpeg",
+    "webinar",
+    "dual-screen",
+    "subagents",
+    "cursor-plugin"
+  ],
+  "author": {
+    "name": "Maya Pro",
+    "url": "https://t.me/maya_pro"
+  },
+  "homepage": "https://t.me/maya_pro",
+  "rules": "./rules/",
+  "skills": "./skills/",
+  "agents": "./agents/",
+  "commands": "./commands/"
+}

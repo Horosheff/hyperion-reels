@@ -1,0 +1,35 @@
+# Runtime memory / outputs
+videoshorts-memory/input/*
+!videoshorts-memory/input/.gitkeep
+videoshorts-memory/transcripts/*
+!videoshorts-memory/transcripts/.gitkeep
+videoshorts-memory/moments/*
+!videoshorts-memory/moments/.gitkeep
+videoshorts-memory/output/**
+!videoshorts-memory/output/.gitkeep
+videoshorts-memory/fragments/*
+!videoshorts-memory/fragments/.gitkeep
+videoshorts-memory/system-profile.json
+videoshorts-memory/dependencies-report.json
+videoshorts-memory/00-brief.md
+videoshorts-memory/run-request.json
+videoshorts-memory/pipeline-fix-queue.md
+
+# Cursor session handoff
+.cursor/videoshorts-handoff.md
+.cursor/videoshorts-fragments/
+
+# Python / local env
+__pycache__/
+*.pyc
+.venv/
+.venv310/
+videoshorts.local.env
+*.wav
+*.mp4
+!videoshorts-memory/samples/.gitkeep
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.log

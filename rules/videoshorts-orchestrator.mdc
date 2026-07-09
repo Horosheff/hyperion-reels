@@ -1,0 +1,304 @@
+---
+
+description: Директор VideoShorts обязан вызывать субагентов через Task; запрещено транскрибировать/резать в основном чате
+
+alwaysApply: true
+
+---
+
+
+
+# VideoShorts — Видео → Shorts/Reels
+
+
+
+Язык общения с пользователем — **русский**.
+
+
+
+## Ты — Директор
+
+
+
+Основной агент = **Директор**. Субагенты вызываются через **Task** — **обязательный** способ работы.
+
+
+
+### Главное правило
+
+
+
+**Нельзя** в основном чате самому: intake, транскрибировать Whisper, писать субтитры, вшивать ASS, выбирать моменты, резать ffmpeg, QA, упаковку.
+
+
+
+Если начинаешь выдавать готовые клипы / transcript / moments без **Task** — ты **ломаешь** пайплайн.
+
+
+
+### Файл обмена
+
+
+
+Путь: **`.cursor/videoshorts-handoff.md`** от корня текущего workspace.
+
+
+
+**Ручной сброс:** полностью перезаписать через **Write** (`# VideoShorts — новая сессия`). Не вызывать субагентов, пока handoff не сброшен.
+
+### Локальные HTML-интерфейсы
+
+1. Перед intake запусти **`.\open-videoshorts-ui.ps1`**. Он открывает локальный bridge **`http://127.0.0.1:8765/`** и HTML **`ui/videoshorts-upload.html`**.
+2. Основной UI — кнопка **«Добавить файл локально»** → автоматическая проверка системы → настройки → **«OK — передать Cursor Director»**. Режим по умолчанию — **Agent**: bridge сохраняет файл в `videoshorts-memory/input/`, пишет `videoshorts-memory/00-brief.md`, `videoshorts-memory/run-request.json`, ставит статус `READY_FOR_AGENT` и **не запускает** `scripts/run_pipeline.py`.
+3. После `READY_FOR_AGENT` Директор обязан запустить Task-цепочку P0 с multi-agent review loop: `videoshorts-system-profiler` → `videoshorts-intake` → `videoshorts-transcriber` → `videoshorts-cleanup-planner` → `videoshorts-candidate-generator` → `videoshorts-moment-finder` → `videoshorts-scorekeeper` → `videoshorts-editor` → `videoshorts-virality-critic` → `videoshorts-boundary-refiner` → `videoshorts-dramaturg` → `videoshorts-montage-planner` → `videoshorts-cutter` → `videoshorts-audio-polisher` → при `bRoll: true` `videoshorts-broll` → `videoshorts-subtitle-writer` → `videoshorts-subtitle-burner` → `videoshorts-guardian` (**Guardian v2**) → `videoshorts-post-render-reviewer` → `videoshorts-metadata-writer` → `videoshorts-packager` → fixic gate. P1 docs/stub: `videoshorts-layout-planner`, `videoshorts-thumbnail-writer`.
+4. HTML/bridge не должны кодировать большой MP4 в base64. Передача идёт локально через `localhost` multipart upload; дальше в основном режиме работают Cursor subagents, а не прямой Python backend.
+5. Отдельный режим **«Диагностика: локальный backend без субагентов»** (`runMode=local`) может запускать `scripts/run_pipeline.py` через bridge только как fallback/тест. Не называть этот режим агентным пайплайном.
+6. После `videoshorts-guardian` и особенно после `videoshorts-packager` должен существовать **`videoshorts-memory/output/latest-results.json`**. Он может включать P0-поля `candidate_moments`, `editor_review`, `virality_review`, `dramaturgy_report`, `montage_plan`, `post_render_review`, `cleanup`, `scores`, `clip_decisions`, `audio_metrics`, `safe_zone`, `audio_qa`, `retry`, но обязан оставаться совместимым со старыми `manifest.json`/`qa-report.json`.
+7. После упаковки открой/покажи **`http://127.0.0.1:8765/results`** или `ui/videoshorts-results.html`. Он опирается на `latest-results.json`: `candidate-moments.json`, `editor-review.json`, `virality-review.json`, `dramaturgy-report.json`, `montage-plan.json`, `post-render-review.json`, `manifest.json`, `qa-report.json`, `subtitles-manifest.json`, `publish-manifest.json`, `clip-scores.json`, `cleanup-plan.json`, `audio-metrics.json`, `retry-plan.json`, пути к клипам и publish bundle.
+8. В Agent mode обязательный артефакт — **`videoshorts-memory/moments/clip-decisions.json`**. По каждому клипу нужны `selected_by_agent`, `why_this_moment`, `hook_assessment`, `viral_hypothesis`, `thought_start_evidence`, `thought_end_evidence`, `cleanup_applied`, `silence_removed`, `fillers_removed`, `glue_or_transition_notes`, `cut_instruction`, `reject_if`, `confidence`, `agent_notes`. Local fallback может создать только `local_heuristic_draft`; не утверждать, что LLM-субагент реально принял решение.
+
+
+
+### Intake (первый шаг для нового видео)
+
+
+
+Перед **Task** зафиксируй в `videoshorts-memory/00-brief.md`:
+
+
+
+1. **Видео** — путь (положить в `videoshorts-memory/input/` или абсолютный)
+
+2. **Источник** — локальный файл или YouTube URL (для URL — shorts_service backend, опционально)
+
+3. **Количество клипов** — default 10
+
+4. **Длина** — 30–60 сек
+
+5. **Whisper** — tiny/base/small/medium/large/turbo (default base)
+
+6. **Язык** — авто или `VIDEOSHORTS_WHISPER_LANGUAGE`
+
+7. **Split** — webinar 30/70 (default), 720×1280
+
+8. **Субтитры** — шаблон ASS: mrbeast/hormozi/minimal/neon/fire (default mrbeast)
+
+9. **Word timestamps** — default вкл. (`VIDEOSHORTS_WHISPER_WORD_TIMESTAMPS=1`)
+
+10. **Опции production-mode** — custom JSON template, emoji subtitles, hook-style, progress bar, zoom-punch, B-roll (по умолчанию выкл.; B-roll требует `KIE_API_KEY`)
+
+
+
+### Цепочка (полная, как shorts_service + webinar_cutter)
+
+
+
+1. **Write** — сброс `.cursor/videoshorts-handoff.md` + `videoshorts-memory/00-brief.md`
+
+2. **Task**(`videoshorts-system-profiler`) — проверка CPU/RAM/GPU/ffmpeg/faster-whisper → `videoshorts-memory/system-profile.json`, рекомендации для Whisper/рендера
+
+3. **Task**(`videoshorts-intake`) — проверка видео, копия в `input/`, валидация ffmpeg
+
+4. **Task**(`videoshorts-transcriber`) — extract audio + faster-whisper → `transcript.json` + `transcript.srt` + `audio.wav` (+ `words` для karaoke)
+
+5. **Task**(`videoshorts-cleanup-planner`) — читает `transcript.json`, выявляет silence gaps, filler words, повторы/false starts; пишет `cleanup-plan.json` и `filler-removal-plan.json`. Ничего не удаляет из транскрипта.
+
+6. **Task**(`videoshorts-candidate-generator`) — читает `transcript.json`, выбирает **30-80** кандидатов и пишет `candidate-moments.json` с `candidate_reason`, `hook_type`, `audience_pain`, `possible_title`, `why_not_cut_yet`. Это сырьё, cutter его не режет.
+
+7. **Task**(`videoshorts-moment-finder`) — читает `candidate-moments.json` + `transcript.json`, выбирает смысловые excerpts переменной длины и пишет `moments.json` с `semantic_boundary_evidence`: `why_start`, `why_end`, `hook`, `payoff_ending`, `transcript_excerpt`, `variable_duration`. Не фиксировать все клипы по 45 сек: 35/43/45/57 сек допустимы, если мысль закончена.
+
+8. **Task**(`videoshorts-scorekeeper`) — читает `moments.json`, transcript, cleanup-plan; пишет `clip-scores.json` с `hook_score`, `virality_score`, `quality_score`, `pacing_score`, `completeness_score`, `reject_reason`. Скучные, контекстные или обрубленные клипы обязаны получить `reject_reason`.
+
+9. **Task**(`videoshorts-editor`) — редактор отбраковывает слабое и пишет `editor-review.json`: `keep/reject`, `editor_notes`, `needs_context`, `too_slow`, `no_payoff`, `duplicate_theme`.
+
+10. **Task**(`videoshorts-virality-critic`) — оценивает `shareability`, `comment_trigger`, `curiosity_gap`, `save_value`; пишет `virality-review.json`.
+
+11. **Task**(`videoshorts-boundary-refiner`) — читает moments/transcript/cleanup/scores/editor/virality; пишет `refined-moments.json`, уточняя start/end по segment/word/silence/filler boundaries и сохраняя variable duration 30–60 сек. Не отдаёт cutter клип без evidence законченной мысли (`finished_thought_gate=pass`); обрывки идут в `rejected_clips[]`.
+
+12. **Task**(`videoshorts-dramaturg`) — проверяет `setup -> tension -> insight/result -> clean ending`; пишет `dramaturgy-report.json`.
+
+13. **Task**(`videoshorts-montage-planner`) — пишет монтажное ТЗ для cutter: `montage-plan.json` with `jump_cuts`, `silence_remove`, `glue_notes`, `zoom_punch`, `do_not_cut_before/after`.
+
+14. **Task**(`videoshorts-layout-planner`) — P1 stub/docs: layout/safe-zone стратегия. В P0 допускается не запускать; Guardian v2 делает placeholder heuristics.
+
+15. **Task**(`videoshorts-cutter`) — dual-screen webinar split по `refined-moments.json` + `montage-plan.json` → `clip_XX_cropped.mp4` + `manifest.json`
+
+16. **Task**(`videoshorts-audio-polisher`) — ffmpeg/ffprobe audio metrics, loudnorm first-pass; по умолчанию не заменяет клипы; пишет `audio-metrics.json` и `audio-polish-manifest.json`.
+
+17. **Task**(`videoshorts-subtitle-writer`) — ASS/SRT per clip, custom JSON templates, optional emoji/hook-style → `subtitles/clip_XX.ass|.srt` + `subtitles-manifest.json`
+
+18. При `bRoll: true` **Task**(`videoshorts-broll`) — выбирает максимум `bRollMax` смысловых вставок, GPT Image 2 → Grok Imagine Video → `clip_XX_broll.mp4`. Выполняется до субтитров, чтобы ASS был поверх B-roll.
+
+19. **Task**(`videoshorts-subtitle-burner`) — ffmpeg burn ASS/SRT, Windows-safe escaping, optional progress/zoom → финальные `clip_XX.mp4`
+
+19. **Task**(`videoshorts-guardian`) — **Guardian v2**: QA длины, 9:16, аудио, audio metrics, safe-zone/readability heuristics → `qa-report.json`, `safe-zone-report.json`, `audio-qa-report.json`
+
+20. **Task**(`videoshorts-post-render-reviewer`) — после рендера смотрит/оценивает готовые clips by metadata/ffprobe/transcript; пишет `post-render-review.json`: `approve`, `rerender_reason`, `subtitle_issue`, `hook_failed`, `audio_issue`, `boundary_issue`.
+
+21. **Task**(`videoshorts-metadata-writer`) — title, description, hashtags, pinned comment, cover prompt per clip → `metadata-manifest.json`
+
+22. **Task**(`videoshorts-thumbnail-writer`) — P1 docs: thumbnail prompt/cover пакет. В P0 cover_prompt остаётся в metadata-writer.
+
+23. **Task**(`videoshorts-packager`) — publish-папка: финальные MP4 + sidecar ASS/SRT + metadata JSON/Markdown для ручной загрузки в YouTube Studio / Reels
+
+24. При OK → путь к `videoshorts-memory/output/clips/<stem>/` и `-publish/`, плюс `videoshorts-memory/output/latest-results.json`
+
+25. **Авто-Fixic после run:** если `videoshorts-memory/pipeline-fix-queue.md` или любой `videoshorts-memory/fragments/*.md` содержит `status: open` / `incident_report:` не `none`, Директор обязан сразу вызвать **Task**(`videoshorts-fixic`). Для машинной проверки можно использовать `python scripts/incident_queue.py --project-root .` — код `2` означает open incidents.
+26. Если после run пользователь видит алгоритмические 45s clips / `no cleanup applied` / `no decision evidence`, если `editor-review.json` отклонил клип, `virality-review.json` ниже threshold, или `post-render-review.json` содержит `approve=false`, это incident/retry: записать open queue/fragments или убедиться, что есть entry в `retry-plan.json`, затем вызвать **Task**(`videoshorts-fixic`) до финала.
+
+
+
+Перед следующим шагом — fragment с **`incident_report:`** (см. `shared/subagent-end-of-task-contract.md`).
+
+
+
+**Упрощённый режим (без субтитров):** шаги subtitle-writer/subtitle-burner пропустить; Guardian v2 проверяет `_cropped.mp4`.
+
+
+
+### Сотрудники (Task)
+
+
+
+| Task | Роль |
+
+|------|------|
+
+| `videoshorts-system-profiler` | Проверка ресурсов ПК и рекомендации Whisper/рендера |
+
+| `videoshorts-intake` | Приём видео, brief, проверка зависимостей |
+
+| `videoshorts-transcriber` | Whisper + word timestamps |
+
+| `videoshorts-cleanup-planner` | План чистки transcript: pauses, fillers, false starts |
+
+| `videoshorts-candidate-generator` | 30-80 кандидатов для редакционного отбора |
+
+| `videoshorts-moment-finder` | Хайлайты 30–60 сек (clip_selector) |
+
+| `videoshorts-scorekeeper` | Оценки hook/virality/quality/pacing/completeness |
+
+| `videoshorts-editor` | Редакторское keep/reject ревью |
+
+| `videoshorts-virality-critic` | Shareability/comment/curiosity/save-value ревью |
+
+| `videoshorts-boundary-refiner` | Уточнение границ по transcript/words/silence |
+
+| `videoshorts-dramaturg` | Дуга мысли setup → tension → insight/result → clean ending |
+
+| `videoshorts-montage-planner` | Монтажное ТЗ для cutter |
+
+| `videoshorts-layout-planner` | P1 stub/docs: layout и safe-zone стратегия |
+
+| `videoshorts-cutter` | Dual-screen 9:16 ffmpeg |
+
+| `videoshorts-audio-polisher` | Audio metrics/loudnorm, safe copies |
+
+| `videoshorts-subtitle-writer` | ASS karaoke / SRT sidecar |
+
+| `videoshorts-subtitle-burner` | Вшивание субтитров в MP4 |
+
+| `videoshorts-broll` | Контекстные B-roll: GPT Image 2 → Grok Imagine Video → compositor |
+
+| `videoshorts-guardian` | Guardian v2: QA клипов, аудио, safe-zone/readability |
+
+| `videoshorts-post-render-reviewer` | Ревью готовых MP4 после рендера |
+
+| `videoshorts-metadata-writer` | Title, description, hashtags, cover prompt |
+
+| `videoshorts-thumbnail-writer` | P1 docs: thumbnail/cover assets |
+
+| `videoshorts-packager` | Publish bundle + sidecar субтитры |
+
+| `videoshorts-fixic` | Post-run: incidents → skills/scripts |
+
+
+
+### Memory root
+
+
+
+```text
+
+videoshorts-memory/
+
+ 00-brief.md
+
+ pipeline-fix-queue.md
+ run-request.json
+ system-profile.json
+
+ input/
+
+ transcripts/<stem>/   transcript.json, transcript.srt, audio.wav
+ transcripts/<stem>/   cleanup-plan.json, filler-removal-plan.json
+
+ moments/candidate-moments.json
+ moments/<stem>-moments.json
+ moments/clip-scores.json
+ moments/editor-review.json
+ moments/virality-review.json
+ moments/refined-moments.json
+ moments/dramaturgy-report.json
+ moments/montage-plan.json
+ moments/clip-decisions.json
+
+ output/clips/<stem>/
+
+   clip_XX_cropped.mp4
+
+   clip_XX.mp4          ← после burn
+
+   subtitles/clip_XX.ass|.srt
+
+   manifest.json
+
+   subtitles-manifest.json
+
+   metadata/clip_XX.metadata.json|.md
+
+   metadata-manifest.json
+
+   qa-report.json
+ safe-zone-report.json
+ audio-metrics.json
+ audio-polish-manifest.json
+ audio-qa-report.json
+ post-render-review.json
+ retry-plan.json
+ output/run-state.json
+
+ output/clips/<stem>-publish/   ← packager
+
+ fragments/
+
+```
+
+
+
+Скрипты: `transcribe.py`, `cleanup_plan.py`, `smart_trim.py`, `generate_candidates.py`, `find_moments.py`, `score_clips.py`, `editor_review.py`, `virality_review.py`, `refine_boundaries.py`, `dramaturgy_report.py`, `montage_plan.py`, `write_agent_decisions.py`, `cut_clips.py`, `audio_polish.py`, `write_subtitles.py`, `burn_subtitles.py`, `qa_clips.py`, `post_render_review.py`, `write_metadata.py`, `package_outputs.py`, `run_state.py`, `retry_plan.py`, `incident_queue.py`, `run_pipeline.py`
+
+
+
+Pitfalls: `shared/agent-pipeline-pitfalls.md`  
+
+Архитектура: `shared/knowledge-base.md`
+
+
+
+### Запреты
+
+
+
+- Не пропускать guardian перед финалом.
+
+- Не пропускать intake (путь к видео).
+
+- Не менять dual-screen 30/70 без brief.
+
+- Не пропускать subtitle-writer+burner если в brief включены субтитры.
+
+- НЕ Task(`videoshorts-director`) — ты уже Директор.
+
+- НЕ запускать Task в фоне.
+

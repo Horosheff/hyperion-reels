@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VideoShorts - результаты</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f6f2;
+      --bg-glow: radial-gradient(circle at 50% -10%, #ffffff 0%, #f7f6f2 58%, #ece9df 100%);
+      --panel: rgba(255, 255, 255, 0.88);
+      --panel-2: #f1f0ea;
+      --text: #080808;
+      --muted: #60646c;
+      --line: rgba(8, 8, 8, 0.12);
+      --accent: #080808;
+      --ok: #087443;
+      --warn: #b54708;
+      --bad: #d92d20;
+    }
+    * { box-sizing: border-box; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+    body {
+      margin: 0;
+      background: var(--bg);
+      background-image: var(--bg-glow);
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', Inter, Segoe UI, Arial, sans-serif;
+      line-height: 1.45;
+    }
+    main { max-width: 1480px; margin: 0 auto; padding: 40px 24px; }
+    header { display: flex; justify-content: space-between; gap: 18px; align-items: center; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+    h1, h2 { margin: 0; line-height: 1.15; }
+    h1 { font-size: 32px; color: var(--text); }
+    h2 { font-size: 19px; margin-bottom: 12px; }
+    p { margin: 0; color: var(--muted); }
+    code, textarea { font-family: Consolas, "Cascadia Mono", monospace; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 18px;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.06);
+    }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .clip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 18px; align-items: start; }
+    .clip-card { padding: 0; overflow: hidden; }
+    .clip-card-body { padding: 18px; display: grid; gap: 14px; }
+    .video-shell { background: #050505; border-bottom: 1px solid var(--line); display: grid; place-items: center; min-height: 520px; }
+    .clip-video { width: min(100%, 430px); aspect-ratio: 9 / 16; max-height: 76vh; background: #000; display: block; object-fit: contain; }
+    .meta-box { display: grid; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+    .meta-box h3 { margin: 0; font-size: 14px; }
+    .copy-field { display: grid; gap: 6px; }
+    .copy-field label { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .copy-field pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.45; color: var(--text); background: var(--panel-2); border-radius: 10px; padding: 10px; }
+    .evidence { color: var(--muted); font-size: 12px; display: grid; gap: 8px; }
+    .evidence b { color: var(--text); }
+    .stat {
+      display: grid;
+      gap: 4px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+    }
+    .stat b { font-size: 28px; color: var(--text); }
+    button, .button {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    button.primary, .button.primary { background: var(--text); border-color: var(--text); color: #ffffff; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .pill { border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 6px 12px; font-size: 12px; background: #ffffff; font-weight: 600; }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .kv { display: grid; gap: 8px; font-size: 13px; }
+    .kv div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 7px; }
+    .kv span { color: var(--muted); }
+    .path { overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
+    textarea {
+      width: 100%;
+      min-height: 180px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #ffffff;
+      color: var(--text);
+      padding: 10px 12px;
+      resize: vertical;
+    }
+    .hidden { display: none; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon { width: 42px; height: 42px; border-radius: 12px; background: var(--text); color: #ffffff; display: grid; place-items: center; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18); }
+    @media (max-width: 880px) {
+      header { display: grid; }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+        </div>
+        <div>
+        <div class="row" style="margin-bottom: 12px">
+          <span class="pill">VideoShorts v0.3.8</span>
+          <span class="pill">latest-results.json</span>
+          <span class="pill">без base64 MP4</span>
+        </div>
+        <h1>VideoShorts: результаты</h1>
+        <p>Загрузите `videoshorts-memory/output/latest-results.json`, чтобы увидеть клипы, QA и publish bundle.</p>
+        </div>
+      </div>
+      <a class="button primary" href="./videoshorts-upload.html">Новая нарезка</a>
+    </header>
+
+    <div class="card">
+      <h2>Данные результатов</h2>
+      <div class="row">
+        <input id="jsonInput" class="hidden" type="file" accept="application/json,.json">
+        <button class="primary" id="pickJson">Открыть latest-results.json</button>
+        <button id="loadLatest" class="primary">Загрузить последние результаты</button>
+        <button id="loadStatus">Проверить статус запуска</button>
+        <button id="loadFromText">Обновить из поля JSON</button>
+      </div>
+      <p style="margin-top: 10px">Путь по умолчанию: <code id="defaultJsonPath">videoshorts-memory/output/latest-results.json</code></p>
+      <textarea id="jsonText" placeholder="Можно вставить JSON сюда вручную"></textarea>
+    </div>
+
+    <section id="summary"></section>
+    <section id="clips"></section>
+    <section id="runStatus"></section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      })[ch]);
+    }
+
+    function statusClass(value) {
+      return String(value || "").toUpperCase() === "PASS" || value === true ? "ok" : "bad";
+    }
+
+    function isLocalBridge() {
+      return location.origin.startsWith("http://127.0.0.1") || location.origin.startsWith("http://localhost");
+    }
+
+    function mediaUrl(clip) {
+      const path = clip.publish_path || clip.path;
+      if (!path) return "";
+      return isLocalBridge() ? `/api/media?path=${encodeURIComponent(path)}` : "";
+    }
+
+    function metadataBlock(meta) {
+      if (!meta) return `<div class="meta-box"><p>Метаданные ещё не созданы. Запустите Task <code>videoshorts-metadata-writer</code> перед packager.</p></div>`;
+      const tags = Array.isArray(meta.hashtags) ? meta.hashtags.join(" ") : "";
+      const copy = meta.copy_block || [meta.title, "", meta.description, "", tags].filter(Boolean).join("\n");
+      return `
+        <div class="meta-box">
+          <h3>Публикация</h3>
+          <div class="copy-field"><label>Title</label><pre>${esc(meta.title || "")}</pre></div>
+          <div class="copy-field"><label>Description</label><pre>${esc(meta.description || "")}</pre></div>
+          <div class="copy-field"><label>Hashtags</label><pre>${esc(tags)}</pre></div>
+          ${meta.pinned_comment ? `<div class="copy-field"><label>Закреп</label><pre>${esc(meta.pinned_comment)}</pre></div>` : ""}
+          <button data-copy="${esc(copy)}">Скопировать title + description + hashtags</button>
+        </div>
+      `;
+    }
+
+    function scoreBlock(clip) {
+      const s = clip.scores || {};
+      if (!s || Object.keys(s).length === 0) return "";
+      return `
+        <div class="meta-box">
+          <h3>Оценка клипа</h3>
+          <div class="kv">
+            <div><span>Quality</span><b>${esc(s.quality_score ?? clip.score ?? "-")}</b></div>
+            <div><span>Hook</span><b>${esc(s.hook_score ?? "-")}</b></div>
+            <div><span>Virality</span><b>${esc(s.virality_score ?? "-")}</b></div>
+            <div><span>Pacing</span><b>${esc(s.pacing_score ?? "-")}</b></div>
+            <div><span>Completeness</span><b>${esc(s.completeness_score ?? "-")}</b></div>
+            <div><span>Reject reason</span><b class="${s.reject_reason ? "warn" : "ok"}">${esc(s.reject_reason || "нет")}</b></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function qaDetailBlock(clip) {
+      const audio = clip.audio || {};
+      const audioQa = clip.audio_qa || {};
+      const safe = clip.safe_zone || {};
+      const retry = clip.retry || {};
+      const cleanup = clip.cleanup || {};
+      const audioWarnings = audioQa.warnings || audio.issues || [];
+      const safeWarnings = safe.warnings || [];
+      return `
+        <div class="meta-box">
+          <h3>P0 QA</h3>
+          <div class="kv">
+            <div><span>Cleanup safe/review</span><b>${esc(cleanup.summary?.safe_plan_items ?? "-")} / ${esc(cleanup.summary?.review_only_items ?? "-")}</b></div>
+            <div><span>Audio</span><b class="${audioWarnings.length ? "warn" : "ok"}">${esc(audio.status || audioQa.status || "-")}</b></div>
+            <div><span>Mean volume</span><b>${esc(audio.volumedetect?.mean_volume_db ?? "-")} dB</b></div>
+            <div><span>Max volume</span><b>${esc(audio.volumedetect?.max_volume_db ?? "-")} dB</b></div>
+            <div><span>Safe-zone</span><b class="${safeWarnings.length ? "warn" : "ok"}">${esc(safe.status || "-")}</b></div>
+            <div><span>Retry</span><b class="${retry.reasons ? "warn" : "ok"}">${esc(retry.reasons ? retry.reasons.join(", ") : "не нужен")}</b></div>
+          </div>
+          ${audioWarnings.length ? `<p class="warn">Audio warnings: ${esc(audioWarnings.join(", "))}</p>` : ""}
+          ${safeWarnings.length ? `<p class="warn">Safe-zone warnings: ${esc(safeWarnings.join(", "))}</p>` : ""}
+        </div>
+      `;
+    }
+
+    function decisionBlock(clip) {
+      const d = clip.decision || {};
+      const cleanup = clip.cleanup || {};
+      const silence = d.silence_removed || cleanup.silence_removed || {};
+      const fillers = d.fillers_removed || cleanup.fillers_removed || {};
+      const source = d.decision_source || "-";
+      if (!d || Object.keys(d).length === 0) {
+        return `
+          <div class="meta-box">
+            <h3>Решение агента</h3>
+            <p class="warn">Нет <code>clip-decisions.json</code>. В Agent mode это incident: клипы выглядят алгоритмическими и требуют <code>videoshorts-fixic</code>.</p>
+          </div>
+        `;
+      }
+      return `
+        <div class="meta-box">
+          <h3>Решение агента</h3>
+          <div class="kv">
+            <div><span>Источник решения</span><b class="${d.agent_confirmation_required ? "warn" : "ok"}">${esc(source)}</b></div>
+            <div><span>Подтверждено агентом</span><b class="${d.selected_by_agent ? "ok" : "warn"}">${d.selected_by_agent ? "да" : "нет / draft"}</b></div>
+            <div><span>Confidence</span><b>${esc(d.confidence ?? "-")}</b></div>
+          </div>
+          <div class="evidence">
+            <div><b>Почему агент выбрал этот фрагмент:</b> ${esc(d.why_this_moment || "-")}</div>
+            <div><b>Вирусная гипотеза:</b> ${esc(d.viral_hypothesis || "-")}</div>
+            <div><b>Начало мысли:</b> ${esc(d.thought_start_evidence || clip.semantic_boundary_evidence?.why_start || "-")}</div>
+            <div><b>Конец мысли:</b> ${esc(d.thought_end_evidence || clip.semantic_boundary_evidence?.why_end || "-")}</div>
+            <div><b>Что удалено/склеено:</b> ${esc(cleanup.glue_or_transition_notes || d.glue_or_transition_notes || "-")}</div>
+            <div><b>Silence removed:</b> ${esc(silence.count ?? 0)} / ${esc(silence.seconds ?? 0)} сек</div>
+            <div><b>Fillers removed:</b> ${esc(fillers.count ?? 0)}</div>
+            <div><b>Reject if:</b> ${esc(Array.isArray(d.reject_if) ? d.reject_if.join("; ") : d.reject_if || "-")}</div>
+            ${d.agent_notes ? `<div><b>Заметка:</b> ${esc(d.agent_notes)}</div>` : ""}
+          </div>
+        </div>
+      `;
+    }
+
+    function agentRoomBlock(clip) {
+      const candidate = clip.candidate || {};
+      const editor = clip.editor_review || {};
+      const virality = clip.virality_review || {};
+      const dramaturgy = clip.dramaturgy || {};
+      const montage = clip.montage_plan || {};
+      const post = clip.post_render_review || {};
+      return `
+        <div class="meta-box">
+          <h3>Редакционная комната агентов</h3>
+          <div class="evidence">
+            <div><b>Кандидат:</b> ${candidate.candidate_id ? `${esc(candidate.candidate_id)} — ${esc(candidate.candidate_reason || "-")}` : "нет candidate-moments.json"}</div>
+            <div><b>Hook type:</b> ${esc(candidate.hook_type || "-")} · <b>Боль ЦА:</b> ${esc(candidate.audience_pain || "-")}</div>
+            <div><b>Possible title:</b> ${esc(candidate.possible_title || "-")}</div>
+          </div>
+        </div>
+        <div class="meta-box">
+          <h3>Редактор</h3>
+          <div class="kv">
+            <div><span>Keep / reject</span><b class="${editor.reject ? "bad" : editor.keep ? "ok" : "warn"}">${editor.reject ? "reject" : editor.keep ? "keep" : "нет данных"}</b></div>
+            <div><span>Needs context</span><b>${esc(editor.needs_context ?? "-")}</b></div>
+            <div><span>Too slow</span><b>${esc(editor.too_slow ?? "-")}</b></div>
+            <div><span>No payoff</span><b>${esc(editor.no_payoff ?? "-")}</b></div>
+            <div><span>Duplicate theme</span><b>${esc(editor.duplicate_theme ?? "-")}</b></div>
+          </div>
+          <p>${esc(editor.editor_notes || "Нет editor-review.json")}</p>
+        </div>
+        <div class="meta-box">
+          <h3>Вирусолог</h3>
+          <div class="kv">
+            <div><span>Virality</span><b class="${virality.status === "REJECT" ? "bad" : virality.status === "PASS" ? "ok" : "warn"}">${esc(virality.virality_score ?? "-")}</b></div>
+            <div><span>Shareability</span><b>${esc(virality.shareability ?? "-")}</b></div>
+            <div><span>Comment trigger</span><b>${esc(virality.comment_trigger ?? "-")}</b></div>
+            <div><span>Curiosity gap</span><b>${esc(virality.curiosity_gap ?? "-")}</b></div>
+            <div><span>Save value</span><b>${esc(virality.save_value ?? "-")}</b></div>
+          </div>
+          <p>${esc(virality.critic_notes || virality.reject_reason || "Нет virality-review.json")}</p>
+        </div>
+        <div class="meta-box">
+          <h3>Драматургия</h3>
+          <div class="evidence">
+            <div><b>Setup:</b> ${esc(dramaturgy.setup || "-")}</div>
+            <div><b>Tension:</b> ${esc(dramaturgy.tension || "-")}</div>
+            <div><b>Insight/result:</b> ${esc(dramaturgy.insight_or_result || "-")}</div>
+            <div><b>Clean ending:</b> ${esc(dramaturgy.clean_ending || "-")}</div>
+            <div><b>Status:</b> <span class="${dramaturgy.status === "REJECT" ? "bad" : dramaturgy.status === "PASS" ? "ok" : "warn"}">${esc(dramaturgy.status || "нет данных")}</span></div>
+          </div>
+        </div>
+        <div class="meta-box">
+          <h3>Монтажное ТЗ</h3>
+          <div class="kv">
+            <div><span>Jump cuts</span><b>${esc(Array.isArray(montage.jump_cuts) ? montage.jump_cuts.length : "-")}</b></div>
+            <div><span>Silence remove</span><b>${esc(montage.silence_remove?.count ?? "-")}</b></div>
+            <div><span>Zoom punch</span><b>${esc(montage.zoom_punch ?? "-")}</b></div>
+            <div><span>Do not cut before/after</span><b>${esc(montage.do_not_cut_before ?? "-")} / ${esc(montage.do_not_cut_after ?? "-")}</b></div>
+          </div>
+          <p>${esc(montage.glue_notes || "Нет montage-plan.json")}</p>
+        </div>
+        <div class="meta-box">
+          <h3>Ревью после рендера</h3>
+          <div class="kv">
+            <div><span>Approve</span><b class="${post.approve ? "ok" : post.approve === false ? "bad" : "warn"}">${post.approve === true ? "да" : post.approve === false ? "нет" : "нет данных"}</b></div>
+            <div><span>Subtitle issue</span><b>${esc(post.subtitle_issue ?? "-")}</b></div>
+            <div><span>Hook failed</span><b>${esc(post.hook_failed ?? "-")}</b></div>
+            <div><span>Audio issue</span><b>${esc(post.audio_issue ?? "-")}</b></div>
+            <div><span>Boundary issue</span><b>${esc(post.boundary_issue ?? "-")}</b></div>
+          </div>
+          <p class="${post.rerender_reason ? "warn" : ""}">${esc(post.rerender_reason || post.reviewer_notes || "Нет post-render-review.json")}</p>
+        </div>
+      `;
+    }
+
+    function render(data) {
+      const totals = data.totals || {};
+      const clips = Array.isArray(data.clips) ? data.clips : [];
+      $("summary").innerHTML = `
+        <div class="grid">
+          <div class="stat"><b class="${statusClass(data.status)}">${esc(data.status || "UNKNOWN")}</b><span>статус</span></div>
+          <div class="stat"><b>${esc(totals.clips ?? clips.length)}</b><span>клипов</span></div>
+          <div class="stat"><b>${esc(totals.qa_passed ?? 0)}/${esc(totals.qa_total ?? 0)}</b><span>QA</span></div>
+          <div class="stat"><b>${esc(totals.score_passed ?? "-")}</b><span>score pass</span></div>
+          <div class="stat"><b>${esc(totals.candidates ?? "-")}</b><span>кандидатов</span></div>
+          <div class="stat"><b>${esc(totals.editor_keep ?? "-")}/${esc(totals.editor_reject ?? "-")}</b><span>editor keep/reject</span></div>
+          <div class="stat"><b>${esc(totals.virality_passed ?? "-")}/${esc(totals.virality_rejected ?? "-")}</b><span>virality pass/reject</span></div>
+          <div class="stat"><b>${esc(totals.post_render_approved ?? "-")}/${esc(totals.post_render_rejected ?? "-")}</b><span>post-render</span></div>
+          <div class="stat"><b>${esc(totals.cleanup_safe_items ?? "-")}</b><span>cleanup candidates</span></div>
+          <div class="stat"><b>${esc(totals.agent_confirmed ?? 0)}/${esc(totals.agent_decisions ?? 0)}</b><span>agent decisions</span></div>
+          <div class="stat"><b>${esc(totals.cleanup_applied_clips ?? "-")}</b><span>cleanup applied</span></div>
+          <div class="stat"><b>${esc(totals.audio_warn ?? "-")}</b><span>audio warnings</span></div>
+          <div class="stat"><b>${esc(totals.retry_failed_clips ?? 0)}</b><span>retry clips</span></div>
+          <div class="stat"><b>${esc(totals.packaged ?? 0)}</b><span>в publish bundle</span></div>
+          <div class="stat"><b>${esc(totals.broll_planned ?? 0)}</b><span>B-roll вставок</span></div>
+        </div>
+        <div class="card">
+          <h2>Пути</h2>
+          <div class="kv">
+            <div><span>Клипы</span><b class="path">${esc(data.clips_dir || "-")}</b></div>
+            <div><span>Publish</span><b class="path">${esc(data.publish_dir || "-")}</b></div>
+            <div><span>Manifest</span><b class="path">${esc(data.manifest_path || "-")}</b></div>
+            <div><span>QA report</span><b class="path">${esc(data.qa_report_path || "-")}</b></div>
+            <div><span>Cleanup plan</span><b class="path">${esc(data.cleanup_plan_path || "-")}</b></div>
+            <div><span>Candidate moments</span><b class="path">${esc(data.candidate_moments_path || "-")}</b></div>
+            <div><span>Scores</span><b class="path">${esc(data.scores_path || "-")}</b></div>
+            <div><span>Editor review</span><b class="path">${esc(data.editor_review_path || "-")}</b></div>
+            <div><span>Virality review</span><b class="path">${esc(data.virality_review_path || "-")}</b></div>
+            <div><span>Dramaturgy report</span><b class="path">${esc(data.dramaturgy_report_path || "-")}</b></div>
+            <div><span>Montage plan</span><b class="path">${esc(data.montage_plan_path || "-")}</b></div>
+            <div><span>Clip decisions</span><b class="path">${esc(data.clip_decisions_path || "-")}</b></div>
+            <div><span>Post-render review</span><b class="path">${esc(data.post_render_review_path || "-")}</b></div>
+            <div><span>B-roll plan</span><b class="path">${esc(data.broll_plan_path || "-")}</b></div>
+            <div><span>Audio metrics</span><b class="path">${esc(data.audio_metrics_path || "-")}</b></div>
+            <div><span>Retry plan</span><b class="path">${esc(data.retry_plan_path || "-")}</b></div>
+          </div>
+        </div>
+      `;
+
+      $("clips").innerHTML = `
+        <h2>Клипы</h2>
+        <div class="clip-grid">
+          ${clips.map((clip) => `
+            <article class="card clip-card">
+              <div class="video-shell">
+                ${mediaUrl(clip)
+                  ? `<video class="clip-video" src="${esc(mediaUrl(clip))}" controls preload="metadata"></video>`
+                  : `<div class="clip-video" style="display:grid;place-items:center;color:#fff;padding:24px;text-align:center">Откройте страницу через <code>http://127.0.0.1:8765/results</code>, чтобы смотреть видео прямо здесь.</div>`}
+              </div>
+              <div class="clip-card-body">
+                <div class="row">
+                  <h2 style="margin-right:auto">${esc(clip.metadata?.title || clip.file || `clip_${clip.index}`)}</h2>
+                  <span class="pill">${esc(Number(clip.duration || 0).toFixed ? Number(clip.duration || 0).toFixed(1) : clip.duration)} сек</span>
+                </div>
+                <div class="kv">
+                  <div><span>QA</span><b class="${statusClass(clip.qa_ok)}">${clip.qa_ok ? "PASS" : "CHECK"}</b></div>
+                  <div><span>Разрешение</span><b>${esc(Array.isArray(clip.resolution) ? clip.resolution.join("x") : "-")}</b></div>
+                  <div><span>Субтитры</span><b>${clip.subtitles && (clip.subtitles.ass || clip.subtitles.srt) ? "есть" : "нет"}</b></div>
+                  <div><span>Burn</span><b>${clip.burned ? "да" : "нет"}</b></div>
+                  <div><span>B-roll</span><b>${clip.broll ? `${esc(clip.broll.visual_type || "есть")} · ${esc(clip.broll.duration_sec || "-")}с` : "нет"}</b></div>
+                  <div><span>Start → End</span><b>${esc(clip.start ?? "-")} → ${esc(clip.end ?? "-")}</b></div>
+                </div>
+                ${scoreBlock(clip)}
+                ${agentRoomBlock(clip)}
+                ${decisionBlock(clip)}
+                ${qaDetailBlock(clip)}
+                ${metadataBlock(clip.metadata)}
+                <div class="evidence">
+                  <div><b>Почему старт:</b> ${esc(clip.semantic_boundary_evidence?.why_start || "-")}</div>
+                  <div><b>Почему конец:</b> ${esc(clip.semantic_boundary_evidence?.why_end || "-")}</div>
+                  <div><b>Hook:</b> ${esc(clip.hook || clip.semantic_boundary_evidence?.hook || "-")}</div>
+                  <div><b>Payoff:</b> ${esc(clip.payoff_ending || clip.semantic_boundary_evidence?.payoff_ending || "-")}</div>
+                </div>
+                <div class="row">
+                  ${clip.path ? `<a class="button" href="${esc(mediaUrl(clip) || clip.path)}" target="_blank" rel="noopener noreferrer">Открыть MP4</a>` : ""}
+                  ${clip.publish_path ? `<span class="pill">publish ready</span>` : ""}
+                </div>
+                <p class="path">${esc(clip.publish_path || clip.path || "")}</p>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function parseText() {
+      try {
+        const data = JSON.parse($("jsonText").value);
+        render(data);
+      } catch (error) {
+        $("summary").innerHTML = `<div class="card"><p class="bad">JSON не прочитан: ${esc(error.message)}</p></div>`;
+        $("clips").innerHTML = "";
+      }
+    }
+
+    $("pickJson").addEventListener("click", () => $("jsonInput").click());
+    $("jsonInput").addEventListener("change", async (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      $("jsonText").value = await file.text();
+      parseText();
+    });
+    $("loadFromText").addEventListener("click", parseText);
+    $("loadLatest").addEventListener("click", loadLatestResults);
+    $("loadStatus").addEventListener("click", loadStatus);
+    document.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-copy]");
+      if (!button) return;
+      await navigator.clipboard.writeText(button.getAttribute("data-copy") || "");
+      button.textContent = "Скопировано";
+      setTimeout(() => { button.textContent = "Скопировать title + description + hashtags"; }, 1200);
+    });
+
+    async function loadLatestResults() {
+      if (!location.origin.startsWith("http://127.0.0.1") && !location.origin.startsWith("http://localhost")) {
+        $("summary").innerHTML = `<div class="card"><p class="bad">Автозагрузка доступна через .\\open-videoshorts-ui.ps1. Выберите JSON вручную.</p></div>`;
+        return;
+      }
+      try {
+        const response = await fetch("/api/latest-results");
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || `HTTP ${response.status}`);
+        }
+        if (payload.path) {
+          $("defaultJsonPath").textContent = payload.path;
+        }
+        $("jsonText").value = JSON.stringify(payload.data, null, 2);
+        render(payload.data);
+      } catch (error) {
+        $("summary").innerHTML = `<div class="card"><p class="bad">Не удалось загрузить latest-results.json: ${esc(error.message)}</p></div>`;
+        $("clips").innerHTML = "";
+      }
+    }
+
+    async function loadStatus() {
+      if (!location.origin.startsWith("http://127.0.0.1") && !location.origin.startsWith("http://localhost")) {
+        $("runStatus").innerHTML = `<div class="card"><p class="bad">Статус доступен при открытии через .\\open-videoshorts-ui.ps1.</p></div>`;
+        return;
+      }
+      try {
+        const response = await fetch("/api/status");
+        const data = await response.json();
+        $("runStatus").innerHTML = `
+          <div class="card">
+            <h2>Фоновый запуск</h2>
+            <div class="kv">
+              <div><span>Статус</span><b class="${statusClass(data.status)}">${esc(data.status || "IDLE")}</b></div>
+              <div><span>Режим</span><b>${esc(data.run_mode || "-")}</b></div>
+              <div><span>PID</span><b>${esc(data.pid || "-")}</b></div>
+              <div><span>Видео</span><b class="path">${esc(data.video_path || "-")}</b></div>
+              <div><span>Лог</span><b class="path">${esc(data.log_path || "-")}</b></div>
+              <div><span>Latest</span><b class="path">${esc(data.latest_results_path || "-")}</b></div>
+              ${data.latest_results_totals ? `<div><span>Клипов в JSON</span><b>${esc(data.latest_results_totals.clips ?? "-")}</b></div>` : ""}
+            </div>
+            ${data.message ? `<p style="margin-top:10px">${esc(data.message)}</p>` : ""}
+          </div>
+        `;
+      } catch (error) {
+        $("runStatus").innerHTML = `<div class="card"><p class="bad">Не удалось прочитать статус: ${esc(error.message)}</p></div>`;
+      }
+    }
+
+    loadStatus();
+    loadLatestResults();
+  </script>
+</body>
+</html>
