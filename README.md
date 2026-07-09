@@ -53,7 +53,7 @@
   &nbsp;
   <a href="https://t.me/maya_pro"><img src="https://img.shields.io/badge/%F0%9F%92%AC%20Telegram%20канал-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram" /></a>
   &nbsp;
-  <a href="docs/AGENTS.md"><img src="https://img.shields.io/badge/%F0%9F%A4%96%20Список%20субагентов-6E56CF?style=for-the-badge" alt="Agents" /></a>
+  <a href="docs/INSTALL.md"><img src="https://img.shields.io/badge/%F0%9F%A4%96%20Правила%20для%20агентов-6E56CF?style=for-the-badge" alt="Agent install rules" /></a>
   &nbsp;
   <a href="docs/ARCHITECTURE.md"><img src="https://img.shields.io/badge/%F0%9F%97%BA%EF%B8%8F%20Архитектура-C9A227?style=for-the-badge" alt="Architecture" /></a>
 </p>
@@ -99,6 +99,9 @@ cd hyperion-reels
 
 Затем **перезапустите Cursor**.
 
+Полная инструкция без ошибок (для людей и для нейросетей):  
+👉 **[`docs/INSTALL.md`](docs/INSTALL.md)**
+
 ### Что делает bootstrap
 
 | Шаг | Действие |
@@ -107,6 +110,29 @@ cd hyperion-reels
 | 2 | Ставит pip-зависимости (`faster-whisper`, OpenCV, MediaPipe…) |
 | 3 | Пытается установить FFmpeg (`winget install Gyan.FFmpeg`) |
 | 4 | Пишет отчёт `videoshorts-memory/dependencies-report.json` |
+
+### Правила для нейросетей / агентов Cursor
+
+Если установку делает агент — он обязан идти строго по [`docs/INSTALL.md`](docs/INSTALL.md):
+
+1. Проверить `python` / `ffmpeg` / `ffprobe`
+2. Запустить `.\bootstrap-videoshorts.ps1`
+3. Убедиться, что `dependencies-report.json` → `ready: true`
+4. Запустить `.\install-plugin.ps1`
+5. Попросить пользователя **перезапустить Cursor**
+6. Только потом открывать UI и `/videoshorts-new`
+
+**Нельзя** стартовать Whisper/нарезку, пока зависимости не `ready`.  
+**Нельзя** путать Agent-режим с `run_pipeline.py` (это только диагностика).
+
+Промпт, который можно дать агенту:
+
+```text
+Установи Гиперион из https://github.com/Horosheff/hyperion-reels
+Строго по docs/INSTALL.md:
+bootstrap → ready=true → install-plugin → перезапуск Cursor → UI.
+Нарезку не запускай, пока зависимости не готовы.
+```
 
 ### Запуск UI
 
@@ -213,6 +239,7 @@ MIT — см. [`LICENSE`](LICENSE)
 
 <p align="center">
   <a href="https://t.me/maya_pro">Telegram</a> ·
+  <a href="docs/INSTALL.md">Установка для агентов</a> ·
   <a href="docs/ARCHITECTURE.md">Архитектура</a> ·
   <a href="docs/AGENTS.md">Субагенты</a>
 </p>
