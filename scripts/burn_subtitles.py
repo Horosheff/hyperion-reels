@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from videoshorts_core import configure_stdio, find_ffmpeg
+from quality_presets import resolve_preset, video_encode_args
 
 configure_stdio()
 
@@ -120,22 +121,20 @@ def get_zoom_filter(start_time: float, width: int, height: int, fps: float = 30.
     return f"zoompan=z='{z_expr}':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)*0.4':d=1:s={width}x{height}:fps={fps}"
 
 
-def apply_video_filter(input_mp4: Path, output_mp4: Path, vf: str) -> bool:
+def apply_video_filter(input_mp4: Path, output_mp4: Path, vf: str, quality_preset: str = "release") -> bool:
     ffmpeg = find_ffmpeg()
     cmd = [
         ffmpeg, "-y", "-i", str(input_mp4),
         "-vf", vf,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        *video_encode_args(quality_preset),
         "-c:a", "copy",
-        "-movflags", "+faststart",
         str(output_mp4),
     ]
     result = subprocess.run(cmd, capture_output=True)
     return result.returncode == 0 and output_mp4.is_file()
 
 
-def burn_subtitles(input_mp4: Path, sub_path: Path, output_mp4: Path, font_size: int = 42, margin_v: int = 80) -> bool:
-    ffmpeg = find_ffmpeg()
+def build_subtitle_filter(sub_path: Path, font_size: int = 42, margin_v: int = 80) -> tuple[str, Path | None]:
     is_ass = sub_path.suffix.lower() == ".ass"
     temp_sub: Path | None = None
     sub_file = sub_path
@@ -159,19 +158,45 @@ def burn_subtitles(input_mp4: Path, sub_path: Path, output_mp4: Path, font_size:
             f"OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV={margin_v}"
         )
         vf = f"subtitles='{sub_escaped}':force_style='{style}'"
+    return vf, temp_sub
 
+
+def render_final_clip(
+    input_mp4: Path,
+    output_mp4: Path,
+    video_filters: list[str],
+    *,
+    quality_preset: str = "release",
+) -> bool:
+    """One encode pass for all video filters; audio copied from already-loudnorm source."""
+    ffmpeg = find_ffmpeg()
+    vf = ",".join(f for f in video_filters if f)
     cmd = [
         ffmpeg, "-y", "-i", str(input_mp4),
         "-vf", vf,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        *video_encode_args(quality_preset),
         "-c:a", "copy",
-        "-movflags", "+faststart",
         str(output_mp4),
     ]
     result = subprocess.run(cmd, capture_output=True)
+    return result.returncode == 0 and output_mp4.is_file() and output_mp4.stat().st_size > 0
+
+
+def burn_subtitles(
+    input_mp4: Path,
+    sub_path: Path,
+    output_mp4: Path,
+    font_size: int = 42,
+    margin_v: int = 80,
+    quality_preset: str = "release",
+    extra_filters: list[str] | None = None,
+) -> bool:
+    sub_vf, temp_sub = build_subtitle_filter(sub_path, font_size=font_size, margin_v=margin_v)
+    filters = [sub_vf, *(extra_filters or [])]
+    ok = render_final_clip(input_mp4, output_mp4, filters, quality_preset=quality_preset)
     if temp_sub and temp_sub.exists():
         temp_sub.unlink(missing_ok=True)
-    return result.returncode == 0 and output_mp4.is_file()
+    return ok
 
 
 def main() -> None:
@@ -187,8 +212,10 @@ def main() -> None:
     parser.add_argument("--transcript", type=Path, default=None, help="transcript.json for zoom trigger words")
     parser.add_argument("--moments", type=Path, default=None, help="moments.json for clip start/end")
     parser.add_argument("--workers", type=int, default=1, help="Параллельных рендеров (render_workers)")
+    parser.add_argument("--quality-preset", default="release", choices=["draft", "release"])
     args = parser.parse_args()
 
+    quality = resolve_preset(args.quality_preset)
     clips_dir = args.clips_dir
     sub_dir = clips_dir / "subtitles"
     if not clips_dir.is_dir():
@@ -252,7 +279,7 @@ def main() -> None:
         if skipped:
             print(f"   [info] skip {skipped} stale cropped not in keep/manifest")
         cropped_files = filtered
-    print(f"🔥 Burning subtitles into {len(cropped_files)} clip(s) (workers={workers})")
+    print(f"🔥 Burning subtitles into {len(cropped_files)} clip(s) (workers={workers}, preset={quality['name']})")
 
     def burn_one(cropped: Path) -> bool:
         idx = cropped.stem.replace("clip_", "").replace(args.suffix, "")
@@ -265,39 +292,31 @@ def main() -> None:
             print(f"   [WARN] No subtitles for {cropped.name}", file=sys.stderr)
             return False
         out = clips_dir / f"clip_{idx}.mp4"
-        print(f"   burn: {source.name} + {sub.name} → {out.name}")
-        if not burn_subtitles(source, sub, out):
-            print(f"   [WARN] Burn failed: {source.name}", file=sys.stderr)
-            return False
-        processed = out
+        extra: list[str] = []
+        res = probe_resolution(source) or (int(quality["width"]), int(quality["height"]))
+        start, end = moments.get(idx, (0.0, probe_duration(source) or 0.0))
         if args.zoom_punch:
-            start, end = moments.get(idx, (0.0, probe_duration(processed) or 0.0))
             words = load_words_for_clip(args.transcript, start, end)
             zoom_time = detect_first_zoom_time(words, start)
-            res = probe_resolution(processed) or (720, 1280)
             if zoom_time is not None:
-                zoom_out = clips_dir / f"clip_{idx}_zoomtmp.mp4"
-                if apply_video_filter(processed, zoom_out, get_zoom_filter(zoom_time, res[0], res[1])):
-                    shutil.move(str(zoom_out), str(processed))
-                elif zoom_out.exists():
-                    zoom_out.unlink(missing_ok=True)
+                extra.append(get_zoom_filter(zoom_time, res[0], res[1]))
         if args.progress_bar:
-            duration = probe_duration(processed) or max(0.001, moments.get(idx, (0, 0))[1] - moments.get(idx, (0, 0))[0])
-            res = probe_resolution(processed) or (720, 1280)
-            progress_out = clips_dir / f"clip_{idx}_progresstmp.mp4"
-            vf = get_progress_bar_filter(
-                duration,
-                res[0],
-                res[1],
-                args.progress_height,
-                args.progress_color,
-                args.progress_bg_color,
-                args.progress_position,
+            duration = probe_duration(source) or max(0.001, end - start)
+            extra.append(
+                get_progress_bar_filter(
+                    duration,
+                    res[0],
+                    res[1],
+                    args.progress_height,
+                    args.progress_color,
+                    args.progress_bg_color,
+                    args.progress_position,
+                )
             )
-            if apply_video_filter(processed, progress_out, vf):
-                shutil.move(str(progress_out), str(processed))
-            elif progress_out.exists():
-                progress_out.unlink(missing_ok=True)
+        print(f"   burn(1-pass): {source.name} + {sub.name} → {out.name}")
+        if not burn_subtitles(source, sub, out, quality_preset=quality["name"], extra_filters=extra):
+            print(f"   [WARN] Burn failed: {source.name}", file=sys.stderr)
+            return False
         return True
 
     ok = 0

@@ -261,6 +261,8 @@ def build_command(video_path: Path, settings: dict) -> list[str]:
         str(settings.get("subtitleFormat") or "both"),
         "--memory-root",
         str(MEMORY_ROOT),
+        "--quality-preset",
+        str(settings.get("qualityPreset") or "release"),
     ]
 
     language = str(settings.get("language") or "").strip()
@@ -320,6 +322,7 @@ def write_brief(video_path: Path, settings: dict, command: list[str], log_path: 
         f"subtitle_template: {settings.get('template', 'mrbeast')}",
         f"metadata_profile: {settings.get('profile', 'webinar')}",
         f"subtitle_format: {settings.get('subtitleFormat', 'both')}",
+        f"quality_preset: {settings.get('qualityPreset', 'release')}",
         f"word_timestamps: {parse_bool(settings.get('wordTimestamps'), True)}",
         f"subtitles_enable: {parse_bool(settings.get('subtitles'), True)}",
         f"burn: {parse_bool(settings.get('burn'), True)}",
@@ -381,11 +384,12 @@ def prepare_agent_request(video_path: Path, settings: dict) -> dict:
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "status": "READY_FOR_AGENT",
         "run_mode": "agent",
+        "agent_mode_env": {"VIDEOSHORTS_AGENT_MODE": "1"},
         "video_path": str(video_path),
         "settings": settings,
         "agent_chain": AGENT_CHAIN,
         "diagnostic_local_command": command,
-        "note": "HTML bridge не запускает scripts/run_pipeline.py в agent mode. Cursor Director должен запустить Task-цепочку.",
+        "note": "HTML bridge не запускает scripts/run_pipeline.py в agent mode. Cursor Director должен запустить Task-цепочку с VIDEOSHORTS_AGENT_MODE=1. Cutter/QA/Packager блокируют local_heuristic_draft.",
         "status_path": str(RUN_STATUS_PATH),
         "brief_path": str(BRIEF_PATH),
         "handoff_path": str(HANDOFF_PATH),
@@ -502,6 +506,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             data = json.loads(RUN_STATUS_PATH.read_text(encoding="utf-8")) if RUN_STATUS_PATH.is_file() else {"status": "IDLE"}
             json_response(self, merge_status_with_results(data))
+            return
+        if path == "/api/config":
+            from quality_presets import PRESETS, DEFAULT_PRESET
+
+            json_response(self, {
+                "ok": True,
+                "project_root": str(PLUGIN_ROOT.resolve()),
+                "input_dir": str(INPUT_DIR.resolve()),
+                "input_dir_rel": "videoshorts-memory/input",
+                "memory_root": str(MEMORY_ROOT.resolve()),
+                "quality_presets": PRESETS,
+                "default_quality_preset": DEFAULT_PRESET,
+                "agent_mode_env": "VIDEOSHORTS_AGENT_MODE=1",
+            })
             return
         if path == "/api/new-session":
             json_response(self, reset_to_waiting_for_upload("new_ui_session"))

@@ -82,9 +82,11 @@ def main() -> None:
 
     parser.add_argument("--memory-root", type=Path, default=Path("videoshorts-memory"))
 
-    parser.add_argument("--width", type=int, default=720)
+    parser.add_argument("--quality-preset", default="release", choices=["draft", "release"], help="draft=720p fast, release=1080p publish")
 
-    parser.add_argument("--height", type=int, default=1280)
+    parser.add_argument("--width", type=int, default=None)
+
+    parser.add_argument("--height", type=int, default=None)
 
     parser.add_argument("--top-ratio", type=float, default=0.30)
 
@@ -130,6 +132,14 @@ def main() -> None:
     args = parser.parse_args()
 
 
+
+    from quality_presets import resolve_preset
+
+    quality = resolve_preset(args.quality_preset)
+    if args.width is None:
+        args.width = int(quality["width"])
+    if args.height is None:
+        args.height = int(quality["height"])
 
     if not args.video.is_file():
 
@@ -197,6 +207,7 @@ def main() -> None:
         "template_json": str(args.template_json.resolve()) if args.template_json else None,
         "subtitle_format": args.subtitle_format,
         "memory_root": str(args.memory_root.resolve()),
+        "quality_preset": args.quality_preset,
         "width": args.width,
         "height": args.height,
         "top_ratio": args.top_ratio,
@@ -359,11 +370,17 @@ def main() -> None:
 
         "--top-ratio", str(args.top_ratio),
 
+        "--quality-preset", args.quality_preset,
+
+        "--no-require-agent-decisions",
+
     ], env=env, state_path=run_state_path, stage="cutter", artifact=clips_dir / "manifest.json")
 
     run_step([
         py, str(_SCRIPTS / "audio_polish.py"),
         str(clips_dir),
+        "--apply-loudnorm",
+        "--quality-preset", args.quality_preset,
     ], env=env, state_path=run_state_path, stage="audio-polisher", artifact=clips_dir / "audio-metrics.json")
 
     broll_plan_path = clips_dir / "broll-plan.json"
@@ -415,6 +432,7 @@ def main() -> None:
                 str(clips_dir),
                 "--moments", str(refined_moments_path),
                 "--transcript", str(transcript_json),
+                "--quality-preset", args.quality_preset,
             ]
             if args.progress_bar:
                 burn_cmd += ["--progress-bar", "--progress-position", args.progress_position]
@@ -433,7 +451,11 @@ def main() -> None:
     if args.qa and not args.skip_qa:
 
         run_step(
-            [py, str(_SCRIPTS / "qa_clips.py"), str(clips_dir), "--min", str(args.min), "--max", str(args.max)],
+            [
+                py, str(_SCRIPTS / "qa_clips.py"), str(clips_dir),
+                "--min", str(args.min), "--max", str(args.max),
+                "--no-require-agent-decisions",
+            ],
             env=env,
             state_path=run_state_path,
             stage="guardian-v2",
@@ -472,7 +494,10 @@ def main() -> None:
 
     if args.publish_bundle and not args.skip_package:
 
-        run_step([py, str(_SCRIPTS / "package_outputs.py"), str(clips_dir)], env=env, state_path=run_state_path, stage="packager", artifact=clips_dir.parent / f"{clips_dir.name}-publish" / "publish-manifest.json")
+        run_step([
+            py, str(_SCRIPTS / "package_outputs.py"), str(clips_dir),
+            "--no-require-agent-decisions",
+        ], env=env, state_path=run_state_path, stage="packager", artifact=clips_dir.parent / f"{clips_dir.name}-publish" / "publish-manifest.json")
     else:
         update_stage(run_state_path, "packager", "SKIPPED", message="publish bundle disabled")
 

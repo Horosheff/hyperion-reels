@@ -18,7 +18,8 @@ description: Guardian v2 QA готовых клипов — ffprobe, audio metri
 
 ```bash
 cd scripts
-python qa_clips.py "../videoshorts-memory/output/clips/<stem>" --min 30 --max 60
+$env:VIDEOSHORTS_AGENT_MODE="1"
+python qa_clips.py "../videoshorts-memory/output/clips/<stem>" --min 30 --max 60 --require-agent-decisions
 ```
 
 3. Проверки:
@@ -27,10 +28,12 @@ python qa_clips.py "../videoshorts-memory/output/clips/<stem>" --min 30 --max 60
    - height > width (вертикаль)
    - manifest.json согласован с файлами на диске
    - есть audio stream, а `audio-metrics.json` не содержит критичных предупреждений
+   - loudnorm применён (или нет `audio_too_quiet`)
    - safe-zone/readability placeholder heuristics: вертикальный canvas, приемлемое разрешение, наличие sidecar/burn субтитров
    - есть `clip-decisions.json` и в Agent mode у клипов есть `selected_by_agent=true`
    - UI/JSON показывает `why_this_moment`, `thought_start_evidence`, `thought_end_evidence`, `viral_hypothesis`, `cleanup_applied`
    - нет симптомов «алгоритмических 45s clips»: все duration ≈ одинаковые, no cleanup applied, no decision evidence
+   - `decision_source=local_heuristic_draft` в Agent mode = **FAIL**
 
 4. Скрипт дополнительно пишет `safe-zone-report.json` и `audio-qa-report.json`.
 

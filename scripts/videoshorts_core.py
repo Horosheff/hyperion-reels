@@ -1145,6 +1145,7 @@ def create_webinar_split(
     output_width: int = 720,
     output_height: int = 1280,
     cut_intervals: list[tuple[float, float]] | None = None,
+    quality_preset: str = "release",
 ) -> bool:
     import cv2
     import numpy as np
@@ -1244,6 +1245,8 @@ def create_webinar_split(
         filter_complex = ";".join(parts)
         audio_map = "[a]"
 
+    from quality_presets import audio_encode_args, video_encode_args
+
     input_args = ["-ss", str(start), "-to", str(end), "-i", str(input_path)] if use_simple_trim else ["-i", str(input_path)]
     cmd = [
         ffmpeg, "-y",
@@ -1251,11 +1254,8 @@ def create_webinar_split(
         "-filter_complex", filter_complex,
         "-map", "[v]",
         "-map", audio_map,
-        "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "23",
-        "-movflags", "+faststart",
-        "-c:a", "aac",
+        *video_encode_args(quality_preset),
+        *audio_encode_args(quality_preset),
         str(output_path),
     ]
     return subprocess.run(cmd, capture_output=True).returncode == 0

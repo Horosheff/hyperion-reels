@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from videoshorts_core import configure_stdio, write_latest_results
+from agent_gate import agent_mode_enabled, evaluate_agent_decisions, evaluate_uniform_durations, gate_message
 
 configure_stdio()
 
@@ -96,38 +97,7 @@ def read_json(path: Path, default):
 
 
 def decision_evidence_status(clips_dir: Path) -> dict:
-    root = Path(__file__).resolve().parents[1]
-    decisions_path = root / "videoshorts-memory" / "moments" / "clip-decisions.json"
-    data = read_json(decisions_path, {})
-    clips = data.get("clips", []) if isinstance(data, dict) else []
-    missing_fields: list[str] = []
-    required = [
-        "why_this_moment",
-        "hook_assessment",
-        "viral_hypothesis",
-        "thought_start_evidence",
-        "thought_end_evidence",
-        "cleanup_applied",
-        "cut_instruction",
-        "reject_if",
-        "confidence",
-    ]
-    for item in clips if isinstance(clips, list) else []:
-        if not isinstance(item, dict):
-            continue
-        idx = item.get("index")
-        for field in required:
-            if field not in item or item.get(field) in (None, "", []):
-                missing_fields.append(f"clip_{idx}:{field}")
-    return {
-        "path": str(decisions_path.resolve()),
-        "exists": decisions_path.is_file(),
-        "decision_source": data.get("decision_source") if isinstance(data, dict) else None,
-        "total": len(clips) if isinstance(clips, list) else 0,
-        "selected_by_agent": data.get("summary", {}).get("selected_by_agent") if isinstance(data, dict) else None,
-        "needs_agent_confirmation": data.get("summary", {}).get("needs_agent_confirmation") if isinstance(data, dict) else None,
-        "missing_fields": missing_fields[:40],
-    }
+    return evaluate_agent_decisions(require_agent=agent_mode_enabled())
 
 
 def audio_metrics_by_file(clips_dir: Path) -> dict[str, dict]:
@@ -202,6 +172,12 @@ def main() -> None:
     parser.add_argument("--min", type=float, default=30)
     parser.add_argument("--max", type=float, default=60)
     parser.add_argument("-o", "--report", type=Path, default=None)
+    parser.add_argument(
+        "--require-agent-decisions",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="FAIL если decisions = local_heuristic_draft (default: on in Agent mode)",
+    )
     args = parser.parse_args()
 
     # Keep generated composites as internal intermediates: only publishable finals
@@ -220,8 +196,11 @@ def main() -> None:
     results = []
     audio_by_file = audio_metrics_by_file(args.clips_dir)
     broll_report = read_json(args.clips_dir / "broll-report.json", {})
-    decision_evidence = decision_evidence_status(args.clips_dir)
-    if not decision_evidence.get("exists") or not decision_evidence.get("total"):
+    require_agent = agent_mode_enabled(args.require_agent_decisions)
+    decision_evidence = evaluate_agent_decisions(require_agent=require_agent)
+    if require_agent and not decision_evidence.get("ok"):
+        issues.append(gate_message(decision_evidence))
+    elif not decision_evidence.get("exists") or not decision_evidence.get("total"):
         issues.append("clip decision evidence missing: videoshorts-memory/moments/clip-decisions.json")
     elif decision_evidence.get("missing_fields"):
         issues.append("clip decision evidence incomplete: " + ", ".join(decision_evidence["missing_fields"][:8]))
@@ -255,7 +234,22 @@ def main() -> None:
             item["ok"] = False
         else:
             item["ok"] = True
+        metric = audio_by_file.get(clip.name) or {}
+        if metric.get("loudnorm_applied") is False and any(
+            x in (metric.get("issues") or []) for x in ("audio_too_quiet",)
+        ):
+            issue = f"{clip.name}: loudnorm not applied and audio too quiet"
+            issues.append(issue)
+            item_issues.append(issue)
+            item["ok"] = False
         results.append(item)
+
+    uniform = evaluate_uniform_durations(results, min_count=5, tolerance=2.0)
+    if require_agent and uniform.get("uniform"):
+        issues.append(
+            f"uniform_algorithmic_durations: stddev={uniform.get('stddev')} "
+            f"(все клипы почти одинаковой длины; похоже на draft 45s, не agent selection)"
+        )
 
     safe_zone, audio_qa = write_aux_reports(args.clips_dir, results, audio_by_file)
     for safe_item in safe_zone.get("clips", []):
@@ -264,13 +258,13 @@ def main() -> None:
                 issues.append(f"{safe_item.get('file')}: safe-zone warning {warning}")
     for audio_item in audio_qa.get("clips", []):
         for warning in audio_item.get("warnings", []):
-            if warning in {"no_audio_stream", "possible_clipping"}:
+            if warning in {"no_audio_stream", "possible_clipping", "audio_too_quiet", "loudnorm_apply_failed"}:
                 issues.append(f"{audio_item.get('file')}: audio warning {warning}")
 
     passed = sum(1 for r in results if r.get("ok"))
     status = "PASS" if passed == len(results) and not issues else "FAIL"
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "guardian": "v2",
         "status": status,
         "passed": passed,
@@ -278,6 +272,8 @@ def main() -> None:
         "issues": issues,
         "clips": results,
         "decision_evidence": decision_evidence,
+        "uniform_durations": uniform,
+        "require_agent_decisions": require_agent,
         "safe_zone_report": str((args.clips_dir / "safe-zone-report.json").resolve()),
         "audio_qa_report": str((args.clips_dir / "audio-qa-report.json").resolve()),
         "broll_report": broll_report if isinstance(broll_report, dict) else {},

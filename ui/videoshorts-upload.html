@@ -458,7 +458,7 @@
         </div>
 
         <div class="hidden" aria-hidden="true">
-          <input id="videoPath" value="C:\Users\mrrut\Desktop\Video Plugin Subagents\videoshorts-memory\input\source.mp4">
+          <input id="videoPath" value="videoshorts-memory/input/source.mp4" placeholder="путь появится после выбора файла">
           <textarea id="command" readonly></textarea>
           <button id="copyCommand" type="button"></button>
           <button id="downloadBrief" type="button"></button>
@@ -495,6 +495,13 @@
                 <option>medium</option>
                 <option>large</option>
                 <option>turbo</option>
+              </select>
+            </label>
+            <label>
+              Качество рендера
+              <select id="qualityPreset">
+                <option value="release" selected>Release 1080×1920 (публикация)</option>
+                <option value="draft">Draft 720×1280 (быстро)</option>
               </select>
             </label>
             <label>
@@ -650,11 +657,20 @@
   </main>
 
   <script>
-    const ROOT = "C:\\Users\\mrrut\\Desktop\\Video Plugin Subagents";
-    const INPUT_DIR = "videoshorts-memory\\input";
+    let ROOT = "";
+    let INPUT_DIR = "videoshorts-memory/input";
+    let INPUT_DIR_ABS = "";
     const $ = (id) => document.getElementById(id);
     let selectedVideoFile = null;
     let lastSystemProfile = null;
+
+    function pathJoin(...parts) {
+      return parts
+        .filter(Boolean)
+        .join("/")
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/");
+    }
 
     function quote(value) {
       return `"${String(value || "").trim().replaceAll('"', '\\"')}"`;
@@ -686,6 +702,7 @@
         "-m", $("model").value,
         "--template", $("template").value,
         "--subtitle-format", $("subtitleFormat").value,
+        "--quality-preset", $("qualityPreset").value || "release",
         "--memory-root", "videoshorts-memory"
       ];
       if ($("language").value) parts.push("--language", $("language").value);
@@ -722,6 +739,7 @@
         `language: ${$("language").value || "auto"}`,
         `subtitle_template: ${$("template").value}`,
         `subtitle_format: ${$("subtitleFormat").value}`,
+        `quality_preset: ${$("qualityPreset").value || "release"}`,
         `word_timestamps: ${$("wordTimestamps").checked}`,
         `subtitles_enable: ${$("subtitles").checked}`,
         `burn: ${$("burn").checked}`,
@@ -744,6 +762,7 @@
         model: $("model").value,
         template: $("template").value,
         subtitleFormat: $("subtitleFormat").value,
+        qualityPreset: $("qualityPreset").value || "release",
         language: $("language").value,
         device: $("device").value,
         wordTimestamps: $("wordTimestamps").checked,
@@ -863,7 +882,9 @@
       const file = event.target.files && event.target.files[0];
       if (!file) return;
       selectedVideoFile = file;
-      const expectedPath = `${ROOT}\\${INPUT_DIR}\\${file.name}`;
+      const expectedPath = INPUT_DIR_ABS
+        ? `${INPUT_DIR_ABS.replace(/[\\/]+$/, "")}\\${file.name}`.replace(/\//g, "\\")
+        : pathJoin(INPUT_DIR, file.name);
       $("videoPath").value = expectedPath;
       $("fileInfo").innerHTML = `
         <div class="kv" style="background: rgba(8,8,8,0.03); border: 1px solid rgba(8,8,8,0.1); padding: 12px; border-radius: 12px;">
@@ -878,7 +899,9 @@
     $("resetFile").addEventListener("click", () => {
       $("fileInput").value = "";
       selectedVideoFile = null;
-      $("videoPath").value = `${ROOT}\\${INPUT_DIR}\\source.mp4`;
+      $("videoPath").value = INPUT_DIR_ABS
+        ? `${INPUT_DIR_ABS.replace(/[\\/]+$/, "")}\\source.mp4`.replace(/\//g, "\\")
+        : pathJoin(INPUT_DIR, "source.mp4");
       $("fileInfo").innerHTML = "<p>Файл пока не выбран. Нажмите кнопку выше или положите видео в папку <code>videoshorts-memory/input/</code>.</p>";
       updateCommand();
     });
@@ -941,9 +964,34 @@
         button.textContent = "OK — передать Cursor Director";
       }
     });
+    async function loadConfig() {
+      if (!location.origin.startsWith("http://127.0.0.1") && !location.origin.startsWith("http://localhost")) {
+        return;
+      }
+      try {
+        const response = await fetch("/api/config");
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || "config error");
+        ROOT = data.project_root || "";
+        INPUT_DIR = data.input_dir_rel || "videoshorts-memory/input";
+        INPUT_DIR_ABS = data.input_dir || "";
+        if (data.default_quality_preset && $("qualityPreset")) {
+          $("qualityPreset").value = data.default_quality_preset;
+        }
+        if (!$("videoPath").value || $("videoPath").value.includes("source.mp4")) {
+          $("videoPath").value = INPUT_DIR_ABS
+            ? `${INPUT_DIR_ABS.replace(/[\\/]+$/, "")}\\source.mp4`.replace(/\//g, "\\")
+            : pathJoin(INPUT_DIR, "source.mp4");
+        }
+        updateCommand();
+      } catch (error) {
+        console.warn("config load failed", error);
+      }
+    }
+
     document.querySelectorAll("input, select").forEach((el) => el.addEventListener("input", updateCommand));
     updateCommand();
-    profileSystem({ silent: true });
+    loadConfig().then(() => profileSystem({ silent: true }));
   </script>
 </body>
 </html>

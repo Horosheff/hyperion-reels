@@ -10,6 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from videoshorts_core import clips_from_json, configure_stdio, create_webinar_split
+from quality_presets import resolve_preset
+from agent_gate import agent_mode_enabled, evaluate_agent_decisions, gate_message
 
 configure_stdio()
 
@@ -19,13 +21,30 @@ def main() -> None:
     parser.add_argument("video", type=Path, help="Исходное видео")
     parser.add_argument("moments", type=Path, help="moments.json от find_moments.py")
     parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Папка для clip_XX.mp4")
-    parser.add_argument("--width", type=int, default=720)
-    parser.add_argument("--height", type=int, default=1280)
+    parser.add_argument("--width", type=int, default=None)
+    parser.add_argument("--height", type=int, default=None)
     parser.add_argument("--top-ratio", type=float, default=0.30)
+    parser.add_argument("--quality-preset", default="release", choices=["draft", "release"])
     parser.add_argument("--montage-plan", type=Path, default=None, help="montage-plan.json with jump/silence/filler removals")
     parser.add_argument("--min-duration", type=float, default=30.0, help="Do not apply cleanup cuts that make a clip shorter than this")
     parser.add_argument("--workers", type=int, default=1, help="Параллельных рендеров (render_workers)")
+    parser.add_argument(
+        "--require-agent-decisions",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Блокировать cutter без подтверждённых agent decisions (default: on in VIDEOSHORTS_AGENT_MODE)",
+    )
     args = parser.parse_args()
+
+    quality = resolve_preset(args.quality_preset)
+    width = args.width or int(quality["width"])
+    height = args.height or int(quality["height"])
+    require_agent = agent_mode_enabled(args.require_agent_decisions)
+    gate = evaluate_agent_decisions(require_agent=require_agent)
+    if require_agent and not gate["ok"]:
+        print(f"[ERROR] {gate_message(gate)}", file=sys.stderr)
+        print(json.dumps(gate, ensure_ascii=False, indent=2), file=sys.stderr)
+        sys.exit(2)
 
     if not args.video.is_file():
         print(f"[ERROR] Video not found: {args.video}", file=sys.stderr)
@@ -54,7 +73,7 @@ def main() -> None:
             }
 
     workers = max(1, args.workers)
-    print(f"✂️ Rendering {len(clips)} dual-screen clips → {out_dir} (workers={workers})")
+    print(f"✂️ Rendering {len(clips)} dual-screen clips → {out_dir} (workers={workers}, {width}x{height}, preset={quality['name']})")
 
     def collect_cut_intervals(montage_item: dict | None, clip_start: float, clip_end: float) -> tuple[list[tuple[float, float]], dict]:
         if not montage_item:
@@ -132,9 +151,10 @@ def main() -> None:
             clip.start,
             clip.end,
             top_ratio=args.top_ratio,
-            output_width=args.width,
-            output_height=args.height,
+            output_width=width,
+            output_height=height,
             cut_intervals=cut_intervals,
+            quality_preset=quality["name"],
         )
         if not success:
             print(f"   [WARN] Failed: clip {i}", file=sys.stderr)
@@ -183,7 +203,19 @@ def main() -> None:
 
     manifest_path = out_dir / "manifest.json"
     manifest_path.write_text(
-        json.dumps({"clips": manifest, "ok_count": ok_count, "total": len(clips)}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {
+                "clips": manifest,
+                "ok_count": ok_count,
+                "total": len(clips),
+                "quality_preset": quality["name"],
+                "width": width,
+                "height": height,
+                "agent_gate": gate,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
     print(f"✅ Rendered {ok_count}/{len(clips)} clips")

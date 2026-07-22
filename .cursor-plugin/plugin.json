@@ -2,7 +2,7 @@
   "name": "videoshorts",
   "displayName": "Гиперион",
   "description": "Гиперион — субагентская система для нарезки и монтажа Shorts/Reels из длинных видео. 20+ агентов, Whisper, FFmpeg, dual-screen, ASS/SRT, Guardian QA.",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "keywords": [
     "hyperion",
     "гиперион",

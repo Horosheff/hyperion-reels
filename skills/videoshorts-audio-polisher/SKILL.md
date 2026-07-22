@@ -1,6 +1,6 @@
 ---
 name: videoshorts-audio-polisher
-description: Аудио-метрики и безопасная loudnorm-полировка клипов.
+description: Аудио-метрики и two-pass loudnorm в cropped/final клипы.
 ---
 
 # VideoShorts Audio Polisher
@@ -13,14 +13,21 @@ description: Аудио-метрики и безопасная loudnorm-поли
 
 ```bash
 cd scripts
-python audio_polish.py "../videoshorts-memory/output/clips/<stem>"
+$env:VIDEOSHORTS_AGENT_MODE="1"
+python audio_polish.py "../videoshorts-memory/output/clips/<stem>" --apply-loudnorm --quality-preset release
 ```
 
-По умолчанию скрипт пишет метрики и **не заменяет** MP4. Для безопасных копий можно использовать `--write-polished`, тогда создаются `*_polished.mp4`.
+По умолчанию применяется **two-pass loudnorm** (I=-14 LUFS) **in-place** к cropped/final клипам. Видео копируется, аудио перекодируется в AAC.
+
+Только метрики без изменения файлов:
+
+```bash
+python audio_polish.py "../videoshorts-memory/output/clips/<stem>" --metrics-only
+```
 
 ## Выход
 
-- `audio-metrics.json`
+- `audio-metrics.json` (`loudnorm_applied: true/false`)
 - `audio-polish-manifest.json`
 
 Guardian v2 читает эти файлы и пишет `audio-qa-report.json`.

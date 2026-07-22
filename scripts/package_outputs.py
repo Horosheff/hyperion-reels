@@ -13,6 +13,7 @@ import traceback
 from pathlib import Path
 
 from videoshorts_core import configure_stdio, write_latest_results
+from agent_gate import agent_mode_enabled, evaluate_agent_decisions, gate_message
 
 configure_stdio()
 
@@ -21,12 +22,58 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="VideoShorts: package clips + subtitle sidecars")
     parser.add_argument("clips_dir", type=Path)
     parser.add_argument("-o", "--publish-dir", type=Path, default=None)
+    parser.add_argument(
+        "--require-agent-decisions",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Блокировать publish без agent decisions (default: on in Agent mode)",
+    )
+    parser.add_argument(
+        "--require-qa-pass",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Блокировать publish если qa-report.json != PASS",
+    )
     args = parser.parse_args()
 
     src = args.clips_dir
     if not src.is_dir():
         print(f"[ERROR] {src}", file=sys.stderr)
         sys.exit(1)
+
+    require_agent = agent_mode_enabled(args.require_agent_decisions)
+    gate = evaluate_agent_decisions(require_agent=require_agent)
+    if require_agent and not gate["ok"]:
+        print(f"[ERROR] {gate_message(gate)}", file=sys.stderr)
+        sys.exit(2)
+
+    qa_path = src / "qa-report.json"
+    if args.require_qa_pass:
+        if not qa_path.is_file():
+            print("[ERROR] qa-report.json missing — Guardian PASS обязателен перед packager", file=sys.stderr)
+            sys.exit(2)
+        try:
+            qa = json.loads(qa_path.read_text(encoding="utf-8"))
+        except Exception:
+            qa = {}
+        if qa.get("status") != "PASS":
+            print(f"[ERROR] QA status={qa.get('status')!r} — publish запрещён", file=sys.stderr)
+            sys.exit(2)
+
+    # Reject packaging when post-render explicitly disapproves
+    post_render_path = src / "post-render-review.json"
+    if post_render_path.is_file():
+        try:
+            pr = json.loads(post_render_path.read_text(encoding="utf-8"))
+            disapproved = [
+                c for c in (pr.get("clips") or [])
+                if isinstance(c, dict) and c.get("approve") is False
+            ]
+            if require_agent and disapproved:
+                print(f"[ERROR] post-render approve=false for {len(disapproved)} clip(s)", file=sys.stderr)
+                sys.exit(2)
+        except Exception:
+            pass
 
     publish = args.publish_dir or (src.parent / f"{src.name}-publish")
     publish.mkdir(parents=True, exist_ok=True)
