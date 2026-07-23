@@ -5,11 +5,11 @@
 <h1 align="center">Гиперион</h1>
 
 <p align="center">
-  <strong>Субагентская система для нарезки и монтажа Shorts / Reels из длинных видео</strong>
+  <strong>Субагентская система для нарезки Shorts / Reels · режимы монтажа · publish desk · Дзен</strong>
 </p>
 
 <p align="center">
-  <em>Субагентская система монтажа · 20+ субагентов · Cursor + Whisper + FFmpeg</em>
+  <em>Гиперион · 20+ субагентов · Cursor Agent · Whisper · FFmpeg · обложки · очередь публикации</em>
 </p>
 
 <p align="center">
@@ -38,11 +38,22 @@
 
 ## Что это
 
-**Гиперион** — плагин для Cursor, который превращает длинное видео (вебинар, эфир, урок, подкаст) в набор вертикальных клипов для YouTube Shorts / Instagram Reels / TikTok.
+**Гиперион** (`hyperion`) — плагин для Cursor, который превращает длинное видео (вебинар, эфир, урок, подкаст, talking head) в набор вертикальных клипов для YouTube Shorts / Instagram Reels / TikTok / Telegram / VK / **Дзен**.
 
-Система не режет «по таймеру». Сначала субагенты понимают речь, выбирают законченные мысли, отбраковывают слабые моменты, уточняют границы, пишут монтажное ТЗ — и только потом режут, субтитруют и упаковывают.
+Система не режет «по таймеру». Субагенты понимают речь, выбирают законченные мысли в диапазоне `min–max` из UI (например 30–90 с), отбраковывают слабое, уточняют границы и только потом режут, субтитруют и упаковывают.
 
-> **20+ субагентов** работают как монтажная студия: profiler, intake, transcriber, editor, virality critic, dramaturg, cutter, guardian, packager и другие.
+### Что нового в 0.4.4
+
+| Возможность | Суть |
+|-------------|------|
+| **4 режима монтажа** | Обычный · Вебинар · Подкаст · Продажи |
+| **Slim Agent P0** | Решения пишет агент (`decision_source=agent`), не эвристика |
+| **Длина клипов из brief** | `clip_count` / `min_sec` / `max_sec` — реальный контракт (spread short/mid/long) |
+| **Publish desk** | Results UI → галочки → обложки → очередь `READY_TO_PUBLISH` |
+| **Дзен** | Встроенный Playwright-клиент: title, description, до 5 тегов-чипов, обложка |
+| **UI Гиперион** | Локальный bridge `http://127.0.0.1:8765/` — загрузка, параметры, результаты |
+
+> **20+ субагентов** работают как монтажная студия: intake, transcriber, editor, boundary-refiner, cutter, guardian, metadata, packager, cover-writer, publish-prep и другие.
 
 ---
 
@@ -66,13 +77,14 @@
 flowchart LR
   A[📹 Длинное видео] --> B[🧠 Whisper + смысл]
   B --> C[✂️ Редакция субагентов]
-  C --> D[🎬 Монтаж 9:16]
+  C --> D[🎬 Монтаж 9:16 · 4 режима]
   D --> E[🔤 Субтитры]
   E --> F[✅ Guardian QA]
   F --> G[📝 SEO titles]
   G --> H[📦 Publish bundle]
   H --> I[☑️ Выбор клипов]
   I --> J[🖼 Обложки + очередь]
+  J --> K[🚀 Дзен / ручная загрузка]
 ```
 
 Подробная схема: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
@@ -82,12 +94,12 @@ flowchart LR
 ### Пайплайн одной строкой
 
 ```text
-Profiler → Intake → Whisper → Cleanup → Candidates → Moments
-→ Scores → Editor → Virality → Boundaries → Dramaturg → Montage
-→ Cutter → Audio → Subtitles → Burn → Guardian → Post-render
-→ Metadata → Packager → (Fixic при сбоях)
+Intake → Whisper → Cleanup∥Candidates → Moments → Editor
+→ Boundary(+montage) → Cutter(+loudnorm, layout) → Subtitles∥Metadata
+→ Burn → Guardian → Packager → Results UI → Covers → Publish queue → Дзен
 ```
 
+Slim P0: scorekeeper / virality / dramaturg / audio-polisher / post-render — внутри editor / boundary / cutter / guardian (отдельные Task только для ремонта).
 ---
 
 ## ⚡ Быстрая установка

@@ -1,7 +1,7 @@
 {
   "name": "hyperion",
   "displayName": "Гиперион",
-  "description": "Гиперион — субагентская система для нарезки и монтажа Shorts/Reels из длинных видео. 20+ агентов, Whisper, FFmpeg, dual-screen, ASS/SRT, Guardian QA.",
+  "description": "Гиперион — субагентская нарезка Shorts/Reels: 20+ агентов Cursor, Whisper, FFmpeg, 4 режима монтажа, publish desk (обложки + очередь) и публикация в Дзен.",
   "version": "0.4.4",
   "keywords": [
     "hyperion",
@@ -12,7 +12,9 @@
     "whisper",
     "ffmpeg",
     "webinar",
-    "dual-screen",
+    "podcast",
+    "dzen",
+    "publish",
     "subagents",
     "cursor-plugin"
   ],
