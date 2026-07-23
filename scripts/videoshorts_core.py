@@ -83,6 +83,9 @@ def build_latest_results(
     qa_report_path = clips_dir / "qa-report.json"
     subtitles_manifest_path = clips_dir / "subtitles-manifest.json"
     metadata_manifest_path = clips_dir / "metadata-manifest.json"
+    publish_selection_path = clips_dir / "publish-selection.json"
+    covers_manifest_path = clips_dir / "covers-manifest.json"
+    publish_queue_path = clips_dir / "publish-queue.json"
     transcript_dir = memory_root / "transcripts" / clips_dir.name
     cleanup_plan_path = transcript_dir / "cleanup-plan.json"
     filler_plan_path = transcript_dir / "filler-removal-plan.json"
@@ -110,6 +113,9 @@ def build_latest_results(
     qa_report = _read_json(qa_report_path, {})
     subtitles_manifest = _read_json(subtitles_manifest_path, {"clips": []})
     metadata_manifest = _read_json(metadata_manifest_path, {"clips": []})
+    publish_selection = _read_json(publish_selection_path, {})
+    covers_manifest = _read_json(covers_manifest_path, {})
+    publish_queue = _read_json(publish_queue_path, {})
     publish_manifest = _read_json(publish_manifest_path, {"clips": []})
     cleanup_plan = _read_json(cleanup_plan_path, {})
     filler_plan = _read_json(filler_plan_path, {})
@@ -154,6 +160,25 @@ def build_latest_results(
         for item in scores_report.get("clips", [])
         if isinstance(item, dict) and item.get("index") is not None
     } if isinstance(scores_report, dict) else {}
+    covers_by_index = {
+        str(item.get("index")): item
+        for item in covers_manifest.get("covers", [])
+        if isinstance(item, dict) and item.get("index") is not None and item.get("ok")
+    } if isinstance(covers_manifest, dict) else {}
+    zen_published_indexes: set[str] = set()
+    if isinstance(publish_queue, dict):
+        for item in publish_queue.get("items") or []:
+            if not isinstance(item, dict) or item.get("index") is None:
+                continue
+            platforms = item.get("platforms") if isinstance(item.get("platforms"), dict) else {}
+            zen = platforms.get("zen") if isinstance(platforms.get("zen"), dict) else {}
+            if str(zen.get("status") or "").lower() in {"published", "ok", "done"}:
+                zen_published_indexes.add(str(item.get("index")))
+    selected_indexes = {
+        str(item.get("index"))
+        for item in (publish_selection.get("selected") or [])
+        if isinstance(item, dict) and item.get("index") is not None
+    } if isinstance(publish_selection, dict) else set()
     decisions_by_index = {
         str(item.get("index")): item
         for item in clip_decisions.get("clips", [])
@@ -232,6 +257,7 @@ def build_latest_results(
         subtitles = subtitles_by_index.get(idx, {})
         metadata = metadata_by_index.get(idx, {})
         score_item = scores_by_index.get(idx, {})
+        cover_item = covers_by_index.get(idx, {})
         decision_item = decisions_by_index.get(idx, {})
         editor_item = editor_by_index.get(idx, {})
         candidate_item = candidates_by_id.get(str(editor_item.get("candidate_id"))) if editor_item else {}
@@ -246,6 +272,10 @@ def build_latest_results(
         broll_item = broll_by_index.get(idx, {})
         ass_name = subtitles.get("ass") or packaged.get("ass")
         srt_name = subtitles.get("srt") or packaged.get("srt")
+        cover_path = cover_item.get("cover_path")
+        cover_file = cover_item.get("cover_file")
+        if not cover_path and cover_file:
+            cover_path = str((clips_dir / "covers" / str(cover_file)).resolve())
 
         clips.append({
             "index": int(idx) if idx.isdigit() else i,
@@ -254,6 +284,14 @@ def build_latest_results(
             "publish_path": _resolve_existing(publish_dir / file_name) if (publish_dir / file_name).is_file() else None,
             "cropped_file": cropped_file or None,
             "final_file": final_file or None,
+            "selected_for_publish": idx in selected_indexes,
+            "cover_path": _resolve_existing(Path(str(cover_path))) if cover_path else None,
+            "cover_file": cover_file,
+            "cover_text": cover_item.get("cover_text") or metadata.get("cover_text") or metadata.get("hook") or clip.get("hook"),
+            "cover_ready": bool(cover_path and Path(str(cover_path)).is_file()),
+            "zen_published": idx in zen_published_indexes,
+            "dzen_published": idx in zen_published_indexes,
+            "publish_zen_ok": idx in zen_published_indexes,
             "start": clip.get("start"),
             "end": clip.get("end"),
             "duration": qa.get("duration") or clip.get("duration"),
@@ -311,7 +349,18 @@ def build_latest_results(
         "qa_report_path": _resolve_existing(qa_report_path) if qa_report_path.is_file() else None,
         "subtitles_manifest_path": _resolve_existing(subtitles_manifest_path) if subtitles_manifest_path.is_file() else None,
         "metadata_manifest_path": _resolve_existing(metadata_manifest_path) if metadata_manifest_path.is_file() else None,
+        "publish_selection_path": _resolve_existing(publish_selection_path) if publish_selection_path.is_file() else None,
+        "covers_manifest_path": _resolve_existing(covers_manifest_path) if covers_manifest_path.is_file() else None,
+        "publish_queue_path": _resolve_existing(publish_queue_path) if publish_queue_path.is_file() else None,
         "publish_manifest_path": _resolve_existing(publish_manifest_path) if publish_manifest_path.is_file() else None,
+        "publish_desk": {
+            "selection_status": publish_selection.get("status") if isinstance(publish_selection, dict) else None,
+            "selected_count": publish_selection.get("selected_count") if isinstance(publish_selection, dict) else 0,
+            "covers_ready": covers_manifest.get("ready_count") if isinstance(covers_manifest, dict) else 0,
+            "queue_status": publish_queue.get("status") if isinstance(publish_queue, dict) else None,
+            "queue_ready_count": publish_queue.get("ready_count") if isinstance(publish_queue, dict) else 0,
+            "queue_blockers": publish_queue.get("blockers") if isinstance(publish_queue, dict) else [],
+        },
         "cleanup_plan_path": _resolve_existing(cleanup_plan_path) if cleanup_plan_path.is_file() else None,
         "filler_plan_path": _resolve_existing(filler_plan_path) if filler_plan_path.is_file() else None,
         "candidate_moments_path": _resolve_existing(candidate_moments_path) if candidate_moments_path.is_file() else None,
@@ -1259,3 +1308,331 @@ def create_webinar_split(
         str(output_path),
     ]
     return subprocess.run(cmd, capture_output=True).returncode == 0
+
+
+def _face_crop_box(
+    input_w: int,
+    input_h: int,
+    face: Optional[Tuple[int, int, int, int]],
+    output_width: int,
+    output_height: int,
+    *,
+    zoom: float = 1.0,
+) -> tuple[int, int, int, int]:
+    """Возвращает crop_w, crop_h, crop_x, crop_y под 9:16."""
+    target_aspect = output_width / max(1, output_height)
+    crop_h = int(min(input_h, max(2, input_h / max(0.85, zoom))))
+    crop_w = int(crop_h * target_aspect)
+    if crop_w > input_w:
+        crop_w = input_w
+        crop_h = int(crop_w / target_aspect)
+    crop_w = max(2, crop_w - (crop_w % 2))
+    crop_h = max(2, crop_h - (crop_h % 2))
+
+    if face:
+        fx, fy, fw, fh = face
+        cx = fx + fw / 2
+        cy = fy + fh * 0.35
+    else:
+        cx = input_w / 2
+        cy = input_h / 2
+
+    crop_x = int(max(0, min(cx - crop_w / 2, input_w - crop_w)))
+    crop_y = int(max(0, min(cy - crop_h / 2, input_h - crop_h)))
+    return crop_w, crop_h, crop_x, crop_y
+
+
+def _sample_faces(
+    input_path: Path,
+    start: float,
+    end: float,
+    *,
+    step: float = 0.5,
+) -> tuple[Optional[object], list[tuple[float, Tuple[int, int, int, int]]]]:
+    """Кадр-проба + список (t, face_bbox)."""
+    import cv2
+
+    cap = cv2.VideoCapture(str(input_path))
+    if not cap.isOpened():
+        return None, []
+    times: list[float] = []
+    t = start
+    while t <= end + 1e-6:
+        times.append(t)
+        t += step
+    if not times or times[-1] < end - 0.05:
+        times.append(end)
+
+    frame0 = None
+    samples: list[tuple[float, Tuple[int, int, int, int]]] = []
+    for sample_time in times:
+        cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, sample_time) * 1000)
+        ret, sample_frame = cap.read()
+        if not ret:
+            continue
+        if frame0 is None:
+            frame0 = sample_frame
+        face = detect_face(sample_frame)
+        if face:
+            samples.append((float(sample_time), face))
+    cap.release()
+    return frame0, samples
+
+
+def _smooth_track(
+    samples: list[tuple[float, Tuple[int, int, int, int]]],
+    start: float,
+    end: float,
+    *,
+    window: float = 1.2,
+) -> list[tuple[float, float, float]]:
+    """Сглаженная траектория (t, cx, cy) для tracking-камеры."""
+    if not samples:
+        return []
+    out: list[tuple[float, float, float]] = []
+    for t, (fx, fy, fw, fh) in samples:
+        nearby = [
+            (sx + sw / 2, sy + sh * 0.35)
+            for st, (sx, sy, sw, sh) in samples
+            if abs(st - t) <= window
+        ]
+        if nearby:
+            cx = sum(p[0] for p in nearby) / len(nearby)
+            cy = sum(p[1] for p in nearby) / len(nearby)
+        else:
+            cx = fx + fw / 2
+            cy = fy + fh * 0.35
+        out.append((t, cx, cy))
+    if out and out[0][0] > start + 0.05:
+        out.insert(0, (start, out[0][1], out[0][2]))
+    if out and out[-1][0] < end - 0.05:
+        out.append((end, out[-1][1], out[-1][2]))
+    return out
+
+
+def create_face_vertical(
+    input_path: Path,
+    output_path: Path,
+    start: float,
+    end: float,
+    output_width: int = 720,
+    output_height: int = 1280,
+    cut_intervals: list[tuple[float, float]] | None = None,
+    quality_preset: str = "release",
+    *,
+    zoom: float = 1.05,
+) -> bool:
+    """Обычный режим: один вертикальный кадр 9:16 с лицом (статичный кроп)."""
+    import numpy as np
+
+    ffmpeg = find_ffmpeg()
+    segments = _keep_segments(start, end, cut_intervals)
+    effective_start = min(s for s, _ in segments)
+    effective_end = max(e for _, e in segments)
+    step = max(0.4, (effective_end - effective_start) / 8)
+    frame, face_samples = _sample_faces(input_path, effective_start, effective_end, step=step)
+    if frame is None:
+        return False
+    input_h, input_w = frame.shape[:2]
+    face = None
+    if face_samples:
+        faces = [f for _, f in face_samples]
+        centers_x = [x + w / 2 for x, y, w, h in faces]
+        centers_y = [y + h * 0.35 for x, y, w, h in faces]
+        fw = int(np.median([w for x, y, w, h in faces]))
+        fh = int(np.median([h for x, y, w, h in faces]))
+        cx = int(np.median(centers_x))
+        cy = int(np.median(centers_y))
+        face = (max(0, cx - fw // 2), max(0, int(cy - fh * 0.35)), max(1, fw), max(1, fh))
+
+    crop_w, crop_h, crop_x, crop_y = _face_crop_box(
+        input_w, input_h, face, output_width, output_height, zoom=zoom
+    )
+    video_filter = (
+        f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
+        f"scale={output_width}:{output_height}"
+    )
+    use_simple_trim = len(segments) == 1 and not cut_intervals
+    if use_simple_trim:
+        filter_complex = f"[0:v]{video_filter}[v]"
+        audio_map = "0:a?"
+        input_args = ["-ss", str(start), "-to", str(end), "-i", str(input_path)]
+    else:
+        parts: list[str] = []
+        concat_inputs: list[str] = []
+        for idx, (seg_start, seg_end) in enumerate(segments):
+            parts.append(
+                f"[0:v]trim=start={seg_start:.3f}:end={seg_end:.3f},"
+                f"setpts=PTS-STARTPTS,{video_filter}[v{idx}]"
+            )
+            parts.append(
+                f"[0:a]atrim=start={seg_start:.3f}:end={seg_end:.3f},"
+                f"asetpts=PTS-STARTPTS[a{idx}]"
+            )
+            concat_inputs.append(f"[v{idx}][a{idx}]")
+        parts.append("".join(concat_inputs) + f"concat=n={len(segments)}:v=1:a=1[v][a]")
+        filter_complex = ";".join(parts)
+        audio_map = "[a]"
+        input_args = ["-i", str(input_path)]
+
+    from quality_presets import audio_encode_args, video_encode_args
+
+    cmd = [
+        ffmpeg, "-y",
+        *input_args,
+        "-filter_complex", filter_complex,
+        "-map", "[v]",
+        "-map", audio_map,
+        *video_encode_args(quality_preset),
+        *audio_encode_args(quality_preset),
+        str(output_path),
+    ]
+    return subprocess.run(cmd, capture_output=True).returncode == 0
+
+
+def create_tracked_vertical(
+    input_path: Path,
+    output_path: Path,
+    start: float,
+    end: float,
+    output_width: int = 720,
+    output_height: int = 1280,
+    cut_intervals: list[tuple[float, float]] | None = None,
+    quality_preset: str = "release",
+    *,
+    sample_step: float = 0.45,
+    segment_len: float = 0.9,
+) -> bool:
+    """Подкаст: вертикаль 9:16 с tracking-камерой по лицу."""
+    ffmpeg = find_ffmpeg()
+    keep = _keep_segments(start, end, cut_intervals)
+    frame, face_samples = _sample_faces(input_path, start, end, step=sample_step)
+    if frame is None:
+        return False
+    input_h, input_w = frame.shape[:2]
+    track = _smooth_track(face_samples, start, end)
+    if not track:
+        return create_face_vertical(
+            input_path, output_path, start, end,
+            output_width, output_height, cut_intervals, quality_preset, zoom=1.08,
+        )
+
+    windows: list[tuple[float, float, float, float]] = []
+    for seg_start, seg_end in keep:
+        t = seg_start
+        while t < seg_end - 0.05:
+            t2 = min(seg_end, t + segment_len)
+            mid = (t + t2) / 2
+            nearest = min(track, key=lambda p: abs(p[0] - mid))
+            windows.append((t, t2, nearest[1], nearest[2]))
+            t = t2
+
+    if not windows:
+        return create_face_vertical(
+            input_path, output_path, start, end,
+            output_width, output_height, cut_intervals, quality_preset,
+        )
+
+    parts: list[str] = []
+    concat_inputs: list[str] = []
+    for idx, (seg_start, seg_end, cx, cy) in enumerate(windows):
+        fake_face = (int(cx - 40), int(cy - 40), 80, 80)
+        crop_w, crop_h, crop_x, crop_y = _face_crop_box(
+            input_w, input_h, fake_face, output_width, output_height, zoom=1.12
+        )
+        vf = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={output_width}:{output_height}"
+        parts.append(
+            f"[0:v]trim=start={seg_start:.3f}:end={seg_end:.3f},"
+            f"setpts=PTS-STARTPTS,{vf}[v{idx}]"
+        )
+        parts.append(
+            f"[0:a]atrim=start={seg_start:.3f}:end={seg_end:.3f},"
+            f"asetpts=PTS-STARTPTS[a{idx}]"
+        )
+        concat_inputs.append(f"[v{idx}][a{idx}]")
+    parts.append("".join(concat_inputs) + f"concat=n={len(windows)}:v=1:a=1[v][a]")
+    filter_complex = ";".join(parts)
+
+    from quality_presets import audio_encode_args, video_encode_args
+
+    cmd = [
+        ffmpeg, "-y",
+        "-i", str(input_path),
+        "-filter_complex", filter_complex,
+        "-map", "[v]",
+        "-map", "[a]",
+        *video_encode_args(quality_preset),
+        *audio_encode_args(quality_preset),
+        str(output_path),
+    ]
+    return subprocess.run(cmd, capture_output=True).returncode == 0
+
+
+LAYOUT_MODES = ("regular", "webinar", "podcast", "sales")
+
+
+def normalize_layout_mode(value: object) -> str:
+    mode = str(value or "regular").strip().lower()
+    aliases = {
+        "normal": "regular",
+        "face": "regular",
+        "talking-head": "regular",
+        "talking_head": "regular",
+        "dual": "webinar",
+        "webinar_30_70": "webinar",
+        "track": "podcast",
+        "tracking": "podcast",
+        "podcast_track": "podcast",
+    }
+    mode = aliases.get(mode, mode)
+    return mode if mode in LAYOUT_MODES else "regular"
+
+
+def metadata_profile_for_layout(layout: str) -> str:
+    return {
+        "regular": "education",
+        "webinar": "webinar",
+        "podcast": "podcast",
+        "sales": "sales",
+    }.get(normalize_layout_mode(layout), "education")
+
+
+def create_layout_clip(
+    layout: str,
+    input_path: Path,
+    output_path: Path,
+    start: float,
+    end: float,
+    *,
+    top_ratio: float = 0.30,
+    output_width: int = 720,
+    output_height: int = 1280,
+    cut_intervals: list[tuple[float, float]] | None = None,
+    quality_preset: str = "release",
+) -> bool:
+    mode = normalize_layout_mode(layout)
+    if mode == "webinar":
+        return create_webinar_split(
+            input_path, output_path, start, end,
+            top_ratio=top_ratio,
+            output_width=output_width,
+            output_height=output_height,
+            cut_intervals=cut_intervals,
+            quality_preset=quality_preset,
+        )
+    if mode == "podcast":
+        return create_tracked_vertical(
+            input_path, output_path, start, end,
+            output_width=output_width,
+            output_height=output_height,
+            cut_intervals=cut_intervals,
+            quality_preset=quality_preset,
+        )
+    return create_face_vertical(
+        input_path, output_path, start, end,
+        output_width=output_width,
+        output_height=output_height,
+        cut_intervals=cut_intervals,
+        quality_preset=quality_preset,
+        zoom=1.08 if mode == "sales" else 1.05,
+    )

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""VideoShorts — публикационные поля для каждого клипа.
+"""VideoShorts — эвристический draft metadata (только --heuristic / local).
 
-Это инструмент агента videoshorts-metadata-writer. Он не публикует ролики,
-а готовит title/description/hashtags/pinned_comment/cover_prompt рядом с MP4.
+Agent mode: videoshorts-metadata-writer пишет JSON сам, затем
+validate_agent_artifacts.py metadata <clips_dir>.
+См. shared/agent-decision-contract.md.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode
 from videoshorts_core import clips_from_json, configure_stdio, segments_from_json
 
 configure_stdio()
@@ -188,6 +190,122 @@ def _pinned_comment(index: int, hook: str, payoff: str, text: str) -> str:
     return templates[(index - 1) % len(templates)]
 
 
+def _seo_keywords(text: str, profile: str) -> list[str]:
+    lower = f"{text} {profile}".lower()
+    seeds = {
+        "webinar": ["shorts", "reels", "вебинар", "инсайт"],
+        "sales": ["продажи", "маркетинг", "бизнес", "воронка"],
+        "education": ["обучение", "разбор", "инструкция", "лайфхак"],
+        "podcast": ["подкаст", "мнение", "разговор", "инсайт"],
+    }
+    keywords = list(seeds.get(profile, seeds["webinar"]))
+    extra_map = [
+        ("cursor", "cursor ai"),
+        ("курсор", "cursor ai"),
+        ("нейросет", "нейросети"),
+        ("автоматиза", "автоматизация"),
+        ("контент", "контент завод"),
+        ("mcp", "mcp servers"),
+        ("make", "make.com"),
+        ("вайбкод", "вайбкодинг"),
+        ("seo", "seo"),
+        ("reels", "instagram reels"),
+        ("youtube", "youtube shorts"),
+    ]
+    for key, kw in extra_map:
+        if key in lower and kw not in keywords:
+            keywords.append(kw)
+    return keywords[:10]
+
+
+def _platform_packs(title: str, description: str, tags: list[str], pinned: str, hook: str, profile: str, text: str) -> dict:
+    keywords = _seo_keywords(f"{text} {hook} {title}", profile)
+    yt_title = _phrase_aware_cut(title, 90)
+    ig_title = _phrase_aware_cut(title, 60)
+    tt_title = _phrase_aware_cut(title, 70)
+    seo_line = "Ключи: " + ", ".join(keywords[:5])
+    yt_desc = "\n\n".join([
+        description,
+        "",
+        "⏱ Смотри до конца — короткий разбор без воды.",
+        seo_line,
+        "",
+        " ".join(tags),
+    ])
+    ig_caption = "\n\n".join([
+        f"🔥 {ig_title}",
+        description,
+        "",
+        "Сохрани, чтобы не потерять.",
+        "",
+        " ".join(tags[:12]),
+    ])
+    tt_desc = "\n".join([
+        tt_title,
+        _phrase_aware_cut(description.replace("\n\n", " "), 150),
+        " ".join(tags[:8]),
+    ])
+    tg_caption = "\n\n".join([
+        f"<b>{title}</b>",
+        description,
+        " ".join(tags[:6]),
+    ])
+    return {
+        "youtube": {
+            "platform": "youtube",
+            "title": yt_title,
+            "description": yt_desc,
+            "hashtags": tags,
+            "pinned_comment": pinned,
+            "seo_keywords": keywords,
+            "copy_block": "\n".join([yt_title, "", yt_desc]),
+        },
+        "instagram": {
+            "platform": "instagram",
+            "title": ig_title,
+            "caption": ig_caption,
+            "description": ig_caption,
+            "hashtags": tags[:15],
+            "first_comment": pinned,
+            "seo_keywords": keywords,
+            "copy_block": ig_caption,
+        },
+        "tiktok": {
+            "platform": "tiktok",
+            "title": tt_title,
+            "description": tt_desc,
+            "hashtags": tags[:10],
+            "seo_keywords": keywords,
+            "copy_block": tt_desc,
+        },
+        "telegram": {
+            "platform": "telegram",
+            "title": title,
+            "caption": tg_caption,
+            "description": tg_caption,
+            "hashtags": tags[:6],
+            "seo_keywords": keywords,
+            "copy_block": tg_caption,
+        },
+        "zen": {
+            "platform": "zen",
+            "title": yt_title[:80],
+            "description": _phrase_aware_cut(description.replace("\n\n", " "), 180),
+            "hashtags": [str(t).lstrip("#") for t in tags[:5]],
+            "seo_keywords": keywords[:8],
+            "copy_block": "\n".join([yt_title[:80], "", _phrase_aware_cut(description.replace("\n\n", " "), 180)]),
+        },
+        "vk": {
+            "platform": "vk",
+            "title": yt_title[:80],
+            "description": description,
+            "hashtags": tags[:5],
+            "seo_keywords": keywords,
+            "copy_block": "\n".join([yt_title[:80], "", description, "", " ".join(tags[:5])]),
+        },
+    }
+
+
 def build_metadata(index: int, clip: dict, text: str, profile: str) -> dict:
     evidence = clip.get("semantic_boundary_evidence") if isinstance(clip.get("semantic_boundary_evidence"), dict) else {}
     hook_raw = clip.get("hook") or evidence.get("hook") or _first_sentence(text)
@@ -197,6 +315,8 @@ def build_metadata(index: int, clip: dict, text: str, profile: str) -> dict:
     description = _summary_lines(text, payoff, hook)
     tags = _hashtags(profile, f"{text} {hook} {payoff}")
     cover_hook = _phrase_aware_cut(hook, 42)
+    pinned = _pinned_comment(index, hook, payoff, text)
+    platforms = _platform_packs(title, description, tags, pinned, hook, profile, text)
     return {
         "index": index,
         "clip_file": clip.get("final_file") or clip.get("file"),
@@ -208,15 +328,19 @@ def build_metadata(index: int, clip: dict, text: str, profile: str) -> dict:
         "title": title,
         "description": description,
         "hashtags": tags,
-        "pinned_comment": _pinned_comment(index, hook, payoff, text),
+        "seo_keywords": platforms["youtube"]["seo_keywords"],
+        "pinned_comment": pinned,
+        "platforms": platforms,
+        "cover_text": cover_hook,
         "cover_prompt": (
-            f"Вертикальная обложка 9:16 для Shorts/Reels. Крупный эмоциональный герой, "
-            f"контрастный современный дизайн, короткий русский хук: «{cover_hook}». "
-            "Не использовать скриншот как единственный визуал, собрать сцену по смыслу клипа."
+            f"Вертикальная обложка 9:16 для Shorts/Reels/TikTok. Крупный эмоциональный герой, "
+            f"контрастный современный дизайн, короткий русский хук крупным шрифтом: «{cover_hook}». "
+            "Читаемо на телефоне, без мелкого текста, без водяных знаков, без скриншота как единственного визуала."
         ),
         "transcript_excerpt": _clean(text, 900),
         "semantic_boundary_evidence": evidence,
         "copy_block": "\n".join([title, "", description, "", " ".join(tags)]),
+        "publish_ready": True,
     }
 
 
@@ -227,7 +351,11 @@ def main() -> None:
     parser.add_argument("clips_dir", type=Path)
     parser.add_argument("--profile", default="webinar", choices=["webinar", "sales", "education", "podcast"])
     parser.add_argument("-o", "--output-dir", type=Path, default=None)
+    add_decision_mode_args(parser)
     args = parser.parse_args()
+
+    manifest_out = args.clips_dir / "metadata-manifest.json"
+    enforce_decision_mode(args, kind="metadata", path=manifest_out)
 
     if not args.transcript.is_file() or not args.moments.is_file() or not args.clips_dir.is_dir():
         print("[ERROR] transcript, moments or clips_dir not found", file=sys.stderr)
@@ -266,16 +394,28 @@ def main() -> None:
             "\n".join([
                 f"# {metadata['title']}",
                 "",
-                "## Описание",
-                metadata["description"],
+                "## YouTube",
+                metadata["platforms"]["youtube"]["title"],
                 "",
-                "## Хештеги",
-                " ".join(metadata["hashtags"]),
+                metadata["platforms"]["youtube"]["description"],
+                "",
+                "## Instagram",
+                metadata["platforms"]["instagram"]["caption"],
+                "",
+                "## TikTok",
+                metadata["platforms"]["tiktok"]["description"],
+                "",
+                "## Telegram",
+                metadata["platforms"]["telegram"]["caption"],
+                "",
+                "## SEO keywords",
+                ", ".join(metadata.get("seo_keywords") or []),
                 "",
                 "## Закреплённый комментарий",
                 metadata["pinned_comment"],
                 "",
                 "## Обложка",
+                f"Текст: {metadata.get('cover_text', '')}",
                 metadata["cover_prompt"],
             ]),
             encoding="utf-8",
@@ -289,11 +429,15 @@ def main() -> None:
             stale.unlink(missing_ok=True)
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "decision_source": "local_heuristic_draft",
+        "authored_by": "heuristic:write_metadata",
         "profile": args.profile,
+        "platforms": ["youtube", "instagram", "tiktok", "telegram"],
         "clips": entries,
         "source_transcript": str(args.transcript.resolve()),
         "source_moments": str(args.moments.resolve()),
+        "note": "Heuristic draft only. Agent mode must Write metadata with decision_source=agent.",
     }
     (args.clips_dir / "metadata-manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"✅ Metadata for {len(entries)} clip(s) → {out_dir}")

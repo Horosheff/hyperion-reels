@@ -41,7 +41,7 @@ Telegram: https://t.me/maya_pro
 
 И существуют:
 
-- `%USERPROFILE%\.cursor\plugins\local\videoshorts\`
+- `%USERPROFILE%\.cursor\plugins\local\hyperion\`
 - `%USERPROFILE%\.cursor\agents\videoshorts-*.md`
 
 ## Дальше

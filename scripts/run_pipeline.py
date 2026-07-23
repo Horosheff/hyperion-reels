@@ -74,7 +74,13 @@ def main() -> None:
     parser.add_argument("-m", "--model", default="base", choices=["tiny", "base", "small", "medium", "large", "turbo"])
 
     parser.add_argument("--template", default="mrbeast", help="ASS шаблон: mrbeast/hormozi/minimal/neon/fire")
-    parser.add_argument("--profile", default="webinar", choices=["webinar", "sales", "education", "podcast"], help="Профиль публикационных метаданных")
+    parser.add_argument("--profile", default=None, choices=["webinar", "sales", "education", "podcast"], help="Профиль публикационных метаданных (по умолчанию из --layout)")
+    parser.add_argument(
+        "--layout",
+        default="regular",
+        choices=["regular", "webinar", "podcast", "sales"],
+        help="Режим кадра: regular / webinar / podcast(tracking) / sales",
+    )
 
     parser.add_argument("--template-json", type=Path, default=None, help="Custom JSON subtitle template")
 
@@ -93,6 +99,8 @@ def main() -> None:
     parser.add_argument("--force-cpu", action="store_true", help="Whisper CPU/int8")
 
     parser.add_argument("--word-timestamps", action=argparse.BooleanOptionalAction, default=True)
+
+    parser.add_argument("--loudnorm", action=argparse.BooleanOptionalAction, default=True, help="Two-pass loudnorm в audio-polisher")
 
     parser.add_argument("--language", default=None, help="Whisper language: ru/en или auto")
 
@@ -134,12 +142,16 @@ def main() -> None:
 
 
     from quality_presets import resolve_preset
+    from videoshorts_core import metadata_profile_for_layout, normalize_layout_mode
 
     quality = resolve_preset(args.quality_preset)
     if args.width is None:
         args.width = int(quality["width"])
     if args.height is None:
         args.height = int(quality["height"])
+    args.layout = normalize_layout_mode(args.layout)
+    if not args.profile:
+        args.profile = metadata_profile_for_layout(args.layout)
 
     if not args.video.is_file():
 
@@ -204,6 +216,7 @@ def main() -> None:
         "model": args.model,
         "template": args.template,
         "profile": args.profile,
+        "layout": args.layout,
         "template_json": str(args.template_json.resolve()) if args.template_json else None,
         "subtitle_format": args.subtitle_format,
         "memory_root": str(args.memory_root.resolve()),
@@ -213,6 +226,7 @@ def main() -> None:
         "top_ratio": args.top_ratio,
         "force_cpu": args.force_cpu,
         "word_timestamps": args.word_timestamps,
+        "loudnorm": args.loudnorm,
         "language": args.language,
         "skip_subtitles": args.skip_subtitles,
         "burn": args.burn and not args.skip_burn,
@@ -236,7 +250,7 @@ def main() -> None:
     ]
     if args.force_cpu:
         transcribe_cmd.append("--force-cpu")
-    if args.language:
+    if args.language and str(args.language).strip().lower() not in {"auto", "none", ""}:
         transcribe_cmd += ["--language", args.language]
     if args.beam_size is not None:
         transcribe_cmd += ["--beam-size", str(args.beam_size)]
@@ -244,6 +258,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "cleanup_plan.py"),
+        "--heuristic",
         str(transcript_json),
         "-o", str(cleanup_plan_path),
         "--filler-output", str(filler_plan_path),
@@ -251,6 +266,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "generate_candidates.py"),
+        "--heuristic",
         str(transcript_json),
         "-o", str(candidate_moments_path),
         "--min", str(args.min),
@@ -263,6 +279,8 @@ def main() -> None:
     fm_cmd = [
 
         py, str(_SCRIPTS / "find_moments.py"),
+
+        "--heuristic",
 
         str(transcript_json),
 
@@ -284,6 +302,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "score_clips.py"),
+        "--heuristic",
         str(moments_path),
         str(transcript_json),
         "--cleanup-plan", str(cleanup_plan_path),
@@ -294,6 +313,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "editor_review.py"),
+        "--heuristic",
         str(moments_path),
         str(transcript_json),
         "--candidates", str(candidate_moments_path),
@@ -302,6 +322,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "virality_review.py"),
+        "--heuristic",
         str(moments_path),
         str(transcript_json),
         "--scores", str(scores_path),
@@ -311,6 +332,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "refine_boundaries.py"),
+        "--heuristic",
         str(moments_path),
         str(transcript_json),
         "--cleanup-plan", str(cleanup_plan_path),
@@ -322,6 +344,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "dramaturgy_report.py"),
+        "--heuristic",
         str(refined_moments_path),
         str(transcript_json),
         "--editor-review", str(editor_review_path),
@@ -331,6 +354,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "montage_plan.py"),
+        "--heuristic",
         str(refined_moments_path),
         "--cleanup-plan", str(cleanup_plan_path),
         "--dramaturgy-report", str(dramaturgy_report_path),
@@ -340,6 +364,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "write_agent_decisions.py"),
+        "--heuristic",
         str(transcript_json),
         str(moments_path),
         "--cleanup-plan", str(cleanup_plan_path),
@@ -370,6 +395,8 @@ def main() -> None:
 
         "--top-ratio", str(args.top_ratio),
 
+        "--layout", str(args.layout),
+
         "--quality-preset", args.quality_preset,
 
         "--no-require-agent-decisions",
@@ -379,7 +406,7 @@ def main() -> None:
     run_step([
         py, str(_SCRIPTS / "audio_polish.py"),
         str(clips_dir),
-        "--apply-loudnorm",
+        "--apply-loudnorm" if args.loudnorm else "--no-apply-loudnorm",
         "--quality-preset", args.quality_preset,
     ], env=env, state_path=run_state_path, stage="audio-polisher", artifact=clips_dir / "audio-metrics.json")
 
@@ -467,6 +494,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "post_render_review.py"),
+        "--heuristic",
         str(clips_dir),
         "--qa-report", str(clips_dir / "qa-report.json"),
         "--montage-plan", str(montage_plan_path),
@@ -477,6 +505,7 @@ def main() -> None:
 
     run_step([
         py, str(_SCRIPTS / "write_metadata.py"),
+        "--heuristic",
         str(transcript_json),
         str(refined_moments_path),
         str(clips_dir),

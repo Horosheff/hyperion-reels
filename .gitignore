@@ -9,6 +9,8 @@ videoshorts-memory/output/**
 !videoshorts-memory/output/.gitkeep
 videoshorts-memory/fragments/*
 !videoshorts-memory/fragments/.gitkeep
+videoshorts-memory/subtitles/**
+videoshorts-memory/brand/**
 videoshorts-memory/system-profile.json
 videoshorts-memory/dependencies-report.json
 videoshorts-memory/00-brief.md
@@ -25,9 +27,19 @@ __pycache__/
 .venv/
 .venv310/
 videoshorts.local.env
+videoshorts-memory/secrets/**
+!videoshorts-memory/secrets/.gitkeep
+videoshorts-memory/output/dzen-screenshots/**
 *.wav
 *.mp4
 !videoshorts-memory/samples/.gitkeep
+
+# Local debug screenshots / probes
+step*.png
+tags_*.png
+tags_field_*.png
+ui/real_user_raw.png
+ui/user_promo_avatar_color.png
 
 # OS / IDE
 .DS_Store

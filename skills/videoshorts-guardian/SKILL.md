@@ -1,59 +1,71 @@
 ---
 name: videoshorts-guardian
-description: Guardian v2 QA готовых клипов — ffprobe, audio metrics, safe-zone/readability.
+description: Guardian v2 QA + post-render approve — один финальный gate перед packager.
 ---
 
-# VideoShorts Guardian v2
+# VideoShorts Guardian v2 (+ post-render)
+
+## Роль
+
+Технический QA **и** post-render approve. Отдельный Task `post-render-reviewer` в slim-пайплайне **не вызывается**.
 
 ## Вход
 
-- `videoshorts-memory/output/clips/<stem>/`
-- `audio-metrics.json` от `videoshorts-audio-polisher`, если уже создан
-- `clip-decisions.json`, `clip-scores.json`, `cleanup-plan.json`, `refined-moments.json`
+- `output/clips/<stem>/` (финальные `clip_XX.mp4` после burn, либо `_cropped` если без субтитров)
+- `audio-metrics.json`, `clip-decisions.json`, scores/editor/virality, refined-moments, cleanup-plan
 
 ## Действия
 
-1. Прочитать pitfalls
-2. Запустить:
+1. Pitfalls + QA:
 
 ```bash
 cd scripts
 $env:VIDEOSHORTS_AGENT_MODE="1"
-python qa_clips.py "../videoshorts-memory/output/clips/<stem>" --min 30 --max 60 --require-agent-decisions
+# --min/--max ОБЯЗАТЕЛЬНО из brief (00-brief.md / run-request settings), не хардкод 30/60
+python qa_clips.py "../videoshorts-memory/output/clips/<stem>" --min <brief.min_sec> --max <brief.max_sec> --require-agent-decisions
 ```
 
-3. Проверки:
-   - каждый `clip_*.mp4` читается ffprobe
-   - duration в диапазоне min–max (+5 сек сверху)
-   - height > width (вертикаль)
-   - manifest.json согласован с файлами на диске
-   - есть audio stream, а `audio-metrics.json` не содержит критичных предупреждений
-   - loudnorm применён (или нет `audio_too_quiet`)
-   - safe-zone/readability placeholder heuristics: вертикальный canvas, приемлемое разрешение, наличие sidecar/burn субтитров
-   - есть `clip-decisions.json` и в Agent mode у клипов есть `selected_by_agent=true`
-   - UI/JSON показывает `why_this_moment`, `thought_start_evidence`, `thought_end_evidence`, `viral_hypothesis`, `cleanup_applied`
-   - нет симптомов «алгоритмических 45s clips»: все duration ≈ одинаковые, no cleanup applied, no decision evidence
-   - `decision_source=local_heuristic_draft` в Agent mode = **FAIL**
+Проверки: ffprobe, duration в диапазоне brief (±5 с допуск), 9:16, audio, safe-zone, agent decisions, нет «все ~45s / no cleanup / no evidence». При brief `max_sec=90` клип 70–90 с — **PASS**, не fail.
 
-4. Скрипт дополнительно пишет `safe-zone-report.json` и `audio-qa-report.json`.
+2. По результатам QA + ffprobe/manifest **сам Write** `post-render-review.json`:
 
-5. При FAIL — `qa_clips.py` пишет open incident в `videoshorts-memory/pipeline-fix-queue.md`; перечислить issues для cutter/audio-polisher/fixic. После QA можно запустить `retry_plan.py`, чтобы получить `retry-plan.json`.
+```json
+{
+  "schema_version": 1,
+  "decision_source": "agent",
+  "authored_by": "videoshorts-guardian",
+  "clips": [
+    {
+      "index": 1,
+      "approve": true,
+      "rerender_reason": null,
+      "subtitle_issue": false,
+      "hook_failed": false,
+      "audio_issue": false,
+      "boundary_issue": false
+    }
+  ],
+  "summary": { "approved": 1, "rejected": 0 }
+}
+```
 
-6. Если обнаружен отсутствующий/неподтверждённый decision evidence в Agent mode — это не просто WARN, а incident для `videoshorts-fixic`.
+`approve=false` → open incident / retry-plan.
+
+3. Validate post-render:
+
+```bash
+cd scripts
+python validate_agent_artifacts.py post-render-review "../videoshorts-memory/output/clips/<stem>/post-render-review.json"
+```
 
 ## Выход
 
-`qa-report.json`, `safe-zone-report.json`, `audio-qa-report.json`, обновлённый `videoshorts-memory/output/latest-results.json` + fragment:
+`qa-report.json`, `safe-zone-report.json`, `audio-qa-report.json`, `post-render-review.json`, обновлённый `latest-results.json` + fragment:
 
 ```text
 === VIDEOSHORTS-GUARDIAN ===
 status: ✅ PASS | ❌ FAIL
 passed: N/M
-report: videoshorts-memory/output/clips/<stem>/qa-report.json
-safe_zone_report: videoshorts-memory/output/clips/<stem>/safe-zone-report.json
-audio_qa_report: videoshorts-memory/output/clips/<stem>/audio-qa-report.json
-latest_results: videoshorts-memory/output/latest-results.json
+post_render_approved: N
 incident_report: none
 ```
-
-Директор не отдаёт клипы пользователю при FAIL без retry cutter. После run Директор проверяет queue/fragments и запускает `videoshorts-fixic`, если остался `status: open`.

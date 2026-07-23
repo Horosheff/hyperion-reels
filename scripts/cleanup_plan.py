@@ -14,6 +14,7 @@ import traceback
 from pathlib import Path
 
 from videoshorts_core import configure_stdio, segments_from_json, words_from_transcript_json
+from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode, stamp_heuristic
 
 configure_stdio()
 
@@ -215,7 +216,10 @@ def main() -> None:
     parser.add_argument("-o", "--output", type=Path, default=None)
     parser.add_argument("--filler-output", type=Path, default=None)
     parser.add_argument("--gap-threshold", type=float, default=0.72)
+    add_decision_mode_args(parser)
     args = parser.parse_args()
+    _artifact_path = args.output or (args.transcript.parent / 'cleanup-plan.json')
+    enforce_decision_mode(args, kind='cleanup-plan', path=_artifact_path)
 
     if not args.transcript.is_file():
         print(f"[ERROR] Transcript not found: {args.transcript}", file=sys.stderr)
@@ -226,8 +230,8 @@ def main() -> None:
     filler_out = args.filler_output or (args.transcript.parent / "filler-removal-plan.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     filler_out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(cleanup, ensure_ascii=False, indent=2), encoding="utf-8")
-    filler_out.write_text(json.dumps(filler, ensure_ascii=False, indent=2), encoding="utf-8")
+    out.write_text(json.dumps(stamp_heuristic(cleanup, 'cleanup_plan'), ensure_ascii=False, indent=2), encoding="utf-8")
+    filler_out.write_text(json.dumps(stamp_heuristic(filler, 'cleanup_plan'), ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"✅ Cleanup plan: {out}")
     print(f"✅ Filler plan:  {filler_out}")
     print(f"   safe={cleanup['summary']['safe_plan_items']} review={cleanup['summary']['review_only_items']}")

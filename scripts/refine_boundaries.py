@@ -11,6 +11,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from videoshorts_core import Clip, configure_stdio, segments_from_json, words_from_transcript_json
+from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode, stamp_heuristic
 
 configure_stdio()
 
@@ -422,7 +423,10 @@ def main() -> None:
     parser.add_argument("-o", "--output", type=Path, default=None)
     parser.add_argument("--min", type=float, default=30, dest="min_sec")
     parser.add_argument("--max", type=float, default=60, dest="max_sec")
+    add_decision_mode_args(parser)
     args = parser.parse_args()
+    _artifact_path = args.output or (args.moments.parent / 'refined-moments.json')
+    enforce_decision_mode(args, kind='refined-moments', path=_artifact_path)
 
     if not args.moments.is_file() or not args.transcript.is_file():
         print("[ERROR] moments or transcript not found", file=sys.stderr)
@@ -463,7 +467,7 @@ def main() -> None:
     }
     out = args.output or (args.moments.parent / "refined-moments.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    out.write_text(json.dumps(stamp_heuristic(payload, 'refine_boundaries'), ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"✅ Refined moments: {out}")
     for i, clip in enumerate(refined, 1):
         print(f"   {i}: {clip['start']:.1f}-{clip['end']:.1f}s dur={clip['duration']:.1f}s score={clip.get('quality_score')}")

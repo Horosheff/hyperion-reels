@@ -10,6 +10,7 @@ from pathlib import Path
 
 from review_utils import items_by_index, read_json, write_json
 from videoshorts_core import configure_stdio
+from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode, stamp_heuristic
 
 configure_stdio()
 
@@ -32,7 +33,10 @@ def main() -> None:
     parser.add_argument("--montage-plan", type=Path, default=None)
     parser.add_argument("--scores", type=Path, default=None)
     parser.add_argument("-o", "--output", type=Path, default=None)
+    add_decision_mode_args(parser)
     args = parser.parse_args()
+    _artifact_path = args.output or (args.clips_dir / 'post-render-review.json')
+    enforce_decision_mode(args, kind='post-render-review', path=_artifact_path)
     if not args.clips_dir.is_dir():
         print(f"[ERROR] clips_dir not found: {args.clips_dir}", file=sys.stderr)
         sys.exit(1)
@@ -124,7 +128,7 @@ def main() -> None:
         },
     }
     out = args.output or (args.clips_dir / "post-render-review.json")
-    write_json(out, payload)
+    write_json(out, stamp_heuristic(payload, 'post_render_review'))
     print(f"✅ Post-render review: {out} approved={payload['summary']['approved']} rejected={payload['summary']['rejected']}")
 
 

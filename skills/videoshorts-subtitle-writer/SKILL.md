@@ -37,6 +37,15 @@ python write_subtitles.py ../videoshorts-memory/transcripts/<stem>/transcript.js
 
 
 
+## Brief (обязательно)
+
+Читай `videoshorts-memory/00-brief.md` и `run-request.json` → `settings`:
+
+- `subtitle_template` / `template` — `-t mrbeast|hormozi|minimal|neon|fire`
+- `emojiSubtitles: true` → добавь `--emoji`
+- `word_timestamps: false` → можно `--no-karaoke` (fallback SRT)
+- `quality_preset` — для согласованности с рендером
+
 ## Шаблоны
 
 

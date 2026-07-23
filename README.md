@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hyperion-banner.png" alt="Гиперион — боженька монтажа" width="100%" />
+  <img src="assets/hyperion-banner.png" alt="Гиперион — субагентская система монтажа" width="100%" />
 </p>
 
 <h1 align="center">Гиперион</h1>
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <em>БОЖЕНЬКА МОНТАЖА · 20+ субагентов · Cursor + Whisper + FFmpeg</em>
+  <em>Субагентская система монтажа · 20+ субагентов · Cursor + Whisper + FFmpeg</em>
 </p>
 
 <p align="center">
@@ -69,11 +69,15 @@ flowchart LR
   C --> D[🎬 Монтаж 9:16]
   D --> E[🔤 Субтитры]
   E --> F[✅ Guardian QA]
-  F --> G[📦 Publish bundle]
+  F --> G[📝 SEO titles]
+  G --> H[📦 Publish bundle]
+  H --> I[☑️ Выбор клипов]
+  I --> J[🖼 Обложки + очередь]
 ```
 
 Подробная схема: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
-Роли агентов: [`docs/AGENTS.md`](docs/AGENTS.md)
+Роли агентов: [`docs/AGENTS.md`](docs/AGENTS.md)  
+Публикация (SEO → галочки → обложки → очередь): [`docs/PUBLISH.md`](docs/PUBLISH.md)
 
 ### Пайплайн одной строкой
 
@@ -234,7 +238,7 @@ MIT — см. [`LICENSE`](LICENSE)
 ---
 
 <p align="center">
-  <strong>Гиперион</strong> · боженька монтажа · сделано для создателей контента
+  <strong>Гиперион</strong> · субагентская система монтажа · сделано для создателей контента
 </p>
 
 <p align="center">

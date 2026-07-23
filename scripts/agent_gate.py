@@ -70,6 +70,8 @@ def evaluate_agent_decisions(plugin_root: Path | None = None, *, require_agent: 
     if require_agent:
         if not path.is_file():
             issues.append("clip_decisions_missing")
+        if decision_source != "agent":
+            issues.append(f"decision_source_not_agent:{decision_source!r}")
         if is_draft:
             issues.append("decision_source_local_heuristic_draft")
         if not selected:
@@ -118,7 +120,7 @@ def evaluate_uniform_durations(clips: list[dict[str, Any]], *, min_count: int = 
 def gate_message(report: dict[str, Any]) -> str:
     issues = ", ".join(report.get("issues") or []) or "unknown"
     return (
-        "Agent gate FAIL: запрещён запуск cutter/packager на draft-решениях. "
-        f"issues=[{issues}]. Подтвердите clip-decisions.json субагентами "
-        "(selected_by_agent=true, decision_source!=local_heuristic_draft)."
+        "Agent gate FAIL: запрещён запуск cutter/packager без агентных решений. "
+        f"issues=[{issues}]. Субагенты должны Write clip-decisions.json "
+        "(decision_source=agent, selected_by_agent=true). См. shared/agent-decision-contract.md."
     )

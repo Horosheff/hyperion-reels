@@ -9,7 +9,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from videoshorts_core import clips_from_json, configure_stdio, create_webinar_split
+from videoshorts_core import clips_from_json, configure_stdio, create_layout_clip, normalize_layout_mode
 from quality_presets import resolve_preset
 from agent_gate import agent_mode_enabled, evaluate_agent_decisions, gate_message
 
@@ -17,13 +17,19 @@ configure_stdio()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="VideoShorts: dual-screen рендер клипов")
+    parser = argparse.ArgumentParser(description="VideoShorts: рендер клипов 9:16")
     parser.add_argument("video", type=Path, help="Исходное видео")
     parser.add_argument("moments", type=Path, help="moments.json от find_moments.py")
     parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Папка для clip_XX.mp4")
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument("--height", type=int, default=None)
     parser.add_argument("--top-ratio", type=float, default=0.30)
+    parser.add_argument(
+        "--layout",
+        default="regular",
+        choices=["regular", "webinar", "podcast", "sales"],
+        help="Режим кадра: regular / webinar 30-70 / podcast tracking / sales",
+    )
     parser.add_argument("--quality-preset", default="release", choices=["draft", "release"])
     parser.add_argument("--montage-plan", type=Path, default=None, help="montage-plan.json with jump/silence/filler removals")
     parser.add_argument("--min-duration", type=float, default=30.0, help="Do not apply cleanup cuts that make a clip shorter than this")
@@ -39,6 +45,7 @@ def main() -> None:
     quality = resolve_preset(args.quality_preset)
     width = args.width or int(quality["width"])
     height = args.height or int(quality["height"])
+    layout = normalize_layout_mode(args.layout)
     require_agent = agent_mode_enabled(args.require_agent_decisions)
     gate = evaluate_agent_decisions(require_agent=require_agent)
     if require_agent and not gate["ok"]:
@@ -73,7 +80,10 @@ def main() -> None:
             }
 
     workers = max(1, args.workers)
-    print(f"✂️ Rendering {len(clips)} dual-screen clips → {out_dir} (workers={workers}, {width}x{height}, preset={quality['name']})")
+    print(
+        f"✂️ Rendering {len(clips)} clips layout={layout} → {out_dir} "
+        f"(workers={workers}, {width}x{height}, preset={quality['name']})"
+    )
 
     def collect_cut_intervals(montage_item: dict | None, clip_start: float, clip_end: float) -> tuple[list[tuple[float, float]], dict]:
         if not montage_item:
@@ -145,7 +155,8 @@ def main() -> None:
         removed = cleanup_applied["removed_seconds"]
         suffix = f", cleanup -{removed:.2f}s" if removed else ""
         print(f"   clip {i} ({ordinal}/{len(clips)}): {clip.start:.1f}-{clip.end:.1f}s{suffix}", flush=True)
-        success = create_webinar_split(
+        success = create_layout_clip(
+            layout,
             args.video,
             out_path,
             clip.start,
@@ -164,6 +175,7 @@ def main() -> None:
             "file": str(out_path.name),
             "cropped_file": str(out_path.name),
             "final_file": f"clip_{i:02d}.mp4",
+            "layout": layout,
             "start": clip.start,
             "end": clip.end,
             "duration": rendered_duration,
@@ -209,6 +221,7 @@ def main() -> None:
                 "ok_count": ok_count,
                 "total": len(clips),
                 "quality_preset": quality["name"],
+                "layout": layout,
                 "width": width,
                 "height": height,
                 "agent_gate": gate,

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from review_utils import clean, items_by_index, read_json, write_json
 from videoshorts_core import configure_stdio
+from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode, stamp_heuristic
 
 configure_stdio()
 
@@ -123,7 +124,10 @@ def main() -> None:
     parser.add_argument("--b-roll", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--min-duration", type=float, default=30.0)
     parser.add_argument("-o", "--output", type=Path, default=None)
+    add_decision_mode_args(parser)
     args = parser.parse_args()
+    _artifact_path = args.output or (Path(args.refined_moments).parent / 'montage-plan.json')
+    enforce_decision_mode(args, kind='montage-plan', path=_artifact_path)
     if not args.refined_moments.is_file():
         print("[ERROR] refined moments not found", file=sys.stderr)
         sys.exit(1)
@@ -248,7 +252,7 @@ def main() -> None:
         },
     }
     out = args.output or (args.refined_moments.parent / "montage-plan.json")
-    write_json(out, payload)
+    write_json(out, stamp_heuristic(payload, 'montage_plan'))
     print(
         f"✅ Montage plan: {out} ready={payload['summary']['ready']} "
         f"review={payload['summary']['review']} zoom={payload['summary']['zoom_punch_enabled_clips']}"

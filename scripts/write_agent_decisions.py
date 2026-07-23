@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""VideoShorts — черновик агентных решений по клипам.
+"""VideoShorts — эвристический draft clip-decisions (только --heuristic / local).
 
-Local fallback использует этот файл только как эвристический draft. В Agent mode
-субагент обязан прочитать, отредактировать и подтвердить решения вручную.
+Agent mode: субагент пишет clip-decisions.json сам (decision_source=agent).
+См. shared/agent-decision-contract.md.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import traceback
 from pathlib import Path
 
 from videoshorts_core import configure_stdio, segments_from_json
+from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode
 
 configure_stdio()
 
@@ -211,22 +212,34 @@ def main() -> None:
     parser.add_argument("--refined", type=Path, default=None)
     parser.add_argument("-o", "--output", type=Path, default=None)
     parser.add_argument("--agent-confirmed", action="store_true", help="Use only inside Cursor Agent mode after manual subagent review.")
+    add_decision_mode_args(parser)
     args = parser.parse_args()
+    _artifact_path = args.output or (args.moments.parent / 'clip-decisions.json')
+    enforce_decision_mode(args, kind='clip-decisions', path=_artifact_path)
 
     if not args.transcript.is_file() or not args.moments.is_file():
         print("[ERROR] transcript or moments not found", file=sys.stderr)
         sys.exit(1)
 
-    decision_source = "subagent_confirmed" if args.agent_confirmed else "local_heuristic_draft"
+    if getattr(args, "agent_confirmed", False):
+        print(
+            "[ERROR] --agent-confirmed удалён. Агент пишет clip-decisions.json сам "
+            "(decision_source=agent). Скрипт только --heuristic для local fallback.",
+            file=sys.stderr,
+        )
+        sys.exit(3)
+
+    decision_source = "local_heuristic_draft"
     payload = build_decisions(
         args.transcript,
         args.moments,
         args.cleanup_plan,
         args.scores,
         args.refined,
-        selected_by_agent=args.agent_confirmed,
+        selected_by_agent=False,
         decision_source=decision_source,
     )
+    payload["authored_by"] = "heuristic:write_agent_decisions"
     out = args.output or (args.moments.parent / "clip-decisions.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

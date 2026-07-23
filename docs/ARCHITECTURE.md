@@ -22,9 +22,13 @@ flowchart TB
 |------|--------|--------------|
 | UI | Загрузка видео, настройки, просмотр результата | `open-videoshorts-ui.ps1`, `ui/` |
 | Директор | Оркестрация Task-цепочки | основной агент Cursor |
-| Субагенты | Решения: что резать, как монтировать, что отбраковать | `agents/`, `skills/` |
-| Скрипты | Инструменты: Whisper, ffmpeg, ASS, QA | `scripts/` |
+| Субагенты | **Решения**: что резать, оценки, SEO, keep/reject | `agents/`, `skills/` — пишут JSON сами |
+| Валидатор | Схема agent-артефактов | `scripts/validate_agent_artifacts.py` |
+| Скрипты-механика | Whisper, ffmpeg, ASS, package, covers | `scripts/` без «думания» |
+| Скрипты-heuristic | Только `run_pipeline.py` / local diagnostic (`--heuristic`) | не agent-путь |
 | Память | Brief, transcript, moments, clips, reports | `videoshorts-memory/` |
+
+Контракт: [`shared/agent-decision-contract.md`](../shared/agent-decision-contract.md)
 
 ## Полный пайплайн
 
@@ -68,7 +72,7 @@ flowchart TD
 
 ### 3. Редактура смысла
 - 30–80 кандидатов моментов
-- Выбор лучших хайлайтов 30–60 сек
+- Выбор хайлайтов в диапазоне brief `min_sec`–`max_sec` (переменная длина, не fixed mid-window)
 - Оценки hook / virality / quality
 - Редактор и вирусолог отбраковывают слабое
 - Уточняются границы законченной мысли
@@ -77,6 +81,8 @@ flowchart TD
 ### 4. Монтаж
 - Монтажное ТЗ: jump cuts, silence remove, zoom
 - Dual-screen 9:16 (webinar 30/70)
+- Regular / sales: talking-head 9:16 face crop
+- Podcast: face tracking camera (segmented crop follow)
 - Полировка звука
 - Субтитры ASS/SRT и burn в MP4
 

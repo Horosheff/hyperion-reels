@@ -10,6 +10,7 @@ import traceback
 from pathlib import Path
 
 from videoshorts_core import analyze_hook_quality_2026, clips_from_json, configure_stdio, segments_from_json
+from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode, stamp_heuristic
 
 configure_stdio()
 
@@ -234,7 +235,10 @@ def main() -> None:
     parser.add_argument("-o", "--output", type=Path, default=None)
     parser.add_argument("--min", type=float, default=30, dest="min_sec")
     parser.add_argument("--max", type=float, default=60, dest="max_sec")
+    add_decision_mode_args(parser)
     args = parser.parse_args()
+    _artifact_path = args.output or (args.moments.parent / 'clip-scores.json')
+    enforce_decision_mode(args, kind='clip-scores', path=_artifact_path)
 
     if not args.moments.is_file() or not args.transcript.is_file():
         print("[ERROR] moments or transcript not found", file=sys.stderr)
@@ -261,7 +265,7 @@ def main() -> None:
     }
     out = args.output or (args.moments.parent / "clip-scores.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    out.write_text(json.dumps(stamp_heuristic(payload, 'score_clips'), ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"✅ Clip scores: {out}")
     print(f"   pass={payload['summary']['passed']} reject={payload['summary']['rejected']}")
 

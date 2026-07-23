@@ -10,6 +10,7 @@ from pathlib import Path
 
 from review_utils import clean, clip_text, has_payoff, items_by_index, looks_incomplete, read_json, write_json
 from videoshorts_core import configure_stdio, segments_from_json
+from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode, stamp_heuristic
 
 configure_stdio()
 
@@ -36,7 +37,10 @@ def main() -> None:
     parser.add_argument("--editor-review", type=Path, default=None)
     parser.add_argument("--virality-review", type=Path, default=None)
     parser.add_argument("-o", "--output", type=Path, default=None)
+    add_decision_mode_args(parser)
     args = parser.parse_args()
+    _artifact_path = args.output or (args.refined_moments.parent / 'dramaturgy-report.json')
+    enforce_decision_mode(args, kind='dramaturgy-report', path=_artifact_path)
     if not args.refined_moments.is_file() or not args.transcript.is_file():
         print("[ERROR] refined moments or transcript not found", file=sys.stderr)
         sys.exit(1)
@@ -97,7 +101,7 @@ def main() -> None:
         },
     }
     out = args.output or (args.refined_moments.parent / "dramaturgy-report.json")
-    write_json(out, payload)
+    write_json(out, stamp_heuristic(payload, 'dramaturgy_report'))
     print(f"✅ Dramaturgy report: {out} pass={payload['summary']['passed']} reject={payload['summary']['rejected']}")
 
 

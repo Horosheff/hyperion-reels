@@ -6,7 +6,7 @@
 ## Brief
 - video: videoshorts-memory/input/source.mp4
 - clips: 10
-- duration: 30-60s
+- duration: из brief min_sec–max_sec (variable spread)
 - whisper_model: base
 - layout: dual-screen 30/70
 

@@ -8,6 +8,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode, stamp_heuristic
 from videoshorts_core import (
     clips_to_json,
     configure_stdio,
@@ -28,7 +29,10 @@ def main() -> None:
     parser.add_argument("--min", type=float, default=30, dest="min_sec", help="Мин. длина (сек)")
     parser.add_argument("--max", type=float, default=60, dest="max_sec", help="Макс. длина (сек)")
     parser.add_argument("--basic", action="store_true", help="Только webinar_cutter эвристики (без clip_selector)")
+    add_decision_mode_args(parser)
     args = parser.parse_args()
+    _artifact_path = args.output or (args.transcript.resolve().parents[2] / 'moments' / (args.transcript.parent.name + '-moments.json'))
+    enforce_decision_mode(args, kind='moments', path=_artifact_path)
 
     if not args.transcript.is_file():
         print(f"[ERROR] Transcript not found: {args.transcript}", file=sys.stderr)
@@ -74,7 +78,7 @@ def main() -> None:
         },
         "source_transcript": str(args.transcript.resolve()),
     }
-    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    out_path.write_text(json.dumps(stamp_heuristic(payload, 'find_moments'), ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"✅ Selected {len(clips)} moments → {out_path}")
     for i, c in enumerate(clips, 1):

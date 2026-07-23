@@ -1,7 +1,8 @@
-"""Минимальный клиент Kie task API для B-roll; ключи не логируются."""
+"""Минимальный клиент Kie task API для B-roll и AI-обложек; ключи не логируются."""
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 import time
 from pathlib import Path
@@ -10,6 +11,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 API_ROOT = "https://api.kie.ai/api/v1/jobs"
+FILE_UPLOAD_ROOT = "https://kieai.redpandaai.co"
 
 
 class KieApiError(RuntimeError):
@@ -105,9 +107,73 @@ class KieClient:
             delay = min(15.0, delay * 1.5)
         raise KieApiError(f"Истёк таймаут ожидания Kie task {task_id}")
 
-    def generate_image(self, prompt: str) -> tuple[str, list[str]]:
-        task_id = self.create_task("gpt-image-2-text-to-image", {"prompt": prompt, "aspect_ratio": "9:16", "resolution": "1K"})
+    def generate_image(self, prompt: str, *, aspect_ratio: str = "9:16", resolution: str = "1K") -> tuple[str, list[str]]:
+        task_id = self.create_task(
+            "gpt-image-2-text-to-image",
+            {"prompt": prompt, "aspect_ratio": aspect_ratio, "resolution": resolution},
+        )
         return task_id, self.wait_for_result(task_id)
+
+    def generate_image_i2i(
+        self,
+        prompt: str,
+        input_urls: list[str],
+        *,
+        aspect_ratio: str = "9:16",
+        resolution: str = "1K",
+    ) -> tuple[str, list[str]]:
+        urls = [u for u in input_urls if isinstance(u, str) and u.startswith("http")]
+        if not urls:
+            raise KieApiError("input_urls пуст — нужен HTTPS референс для image-to-image")
+        task_id = self.create_task(
+            "gpt-image-2-image-to-image",
+            {
+                "prompt": prompt,
+                "input_urls": urls[:16],
+                "aspect_ratio": aspect_ratio,
+                "resolution": resolution,
+            },
+        )
+        return task_id, self.wait_for_result(task_id)
+
+    def upload_file(self, local_path: Path, *, upload_path: str = "videoshorts/covers") -> str:
+        """Загрузка локального файла на Kie CDN (stream multipart) → HTTPS URL для input_urls."""
+        path = Path(local_path)
+        if not path.is_file():
+            raise KieApiError(f"Файл для upload не найден: {path.name}")
+        try:
+            import requests
+        except ImportError as exc:
+            raise KieApiError("Для upload нужен пакет requests: pip install requests") from exc
+
+        mime, _ = mimetypes.guess_type(path.name)
+        mime = mime or "application/octet-stream"
+        try:
+            with path.open("rb") as fh:
+                response = requests.post(
+                    f"{FILE_UPLOAD_ROOT}/api/file-stream-upload",
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    files={"file": (path.name, fh, mime)},
+                    data={"uploadPath": upload_path, "fileName": path.name},
+                    timeout=300,
+                )
+        except requests.RequestException as exc:
+            raise KieApiError("Не удалось загрузить файл на Kie CDN") from exc
+        if response.status_code >= 400:
+            raise KieApiError(f"Kie upload HTTP {response.status_code}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise KieApiError("Kie upload вернул некорректный JSON") from exc
+        if not isinstance(payload, dict):
+            raise KieApiError("Kie upload вернул некорректный JSON")
+        if not payload.get("success") and payload.get("code") != 200:
+            raise KieApiError(f"Kie upload отклонён: {payload.get('msg') or payload.get('code')}")
+        data = payload.get("data") or {}
+        url = data.get("fileUrl") or data.get("downloadUrl")
+        if not isinstance(url, str) or not url.startswith("http"):
+            raise KieApiError("Kie upload не вернул fileUrl")
+        return url
 
     def generate_video(self, prompt: str, image_url: str) -> tuple[str, list[str]]:
         task_id = self.create_task(

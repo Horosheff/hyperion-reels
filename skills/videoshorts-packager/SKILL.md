@@ -7,6 +7,7 @@
 - fallback на `clip_XX_cropped.mp4` только при `--no-burn`
 - перед packager: `videoshorts-metadata-writer` + Guardian **PASS**
 - в Agent mode: `VIDEOSHORTS_AGENT_MODE=1` и подтверждённые decisions
+- metadata: копировать и `.metadata.json`, и `.metadata.md`; если в `metadata-manifest` поле `markdown` пустое/`null` — fallback на `clip_XX.metadata.md` рядом с json (не оставлять publish без md)
 
 ## Команда
 

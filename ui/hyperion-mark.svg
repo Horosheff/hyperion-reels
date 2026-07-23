@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- Hyperion mark: continuous-line profile + sun. Minimal, no Liberty crown. -->
+  <g stroke="#0066FF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- sun -->
+    <circle cx="58" cy="78" r="22"/>
+    <path d="M58 42v-8M58 122v-8M22 78h-8M102 78h-8M33 53l-6-6M89 109l-6-6M89 53l-6 6M33 109l-6 6"/>
+    <!-- continuous face profile -->
+    <path d="M118 46
+             C108 48 100 58 98 70
+             C96 84 100 96 108 106
+             C112 112 112 122 108 132
+             C122 126 138 124 152 128
+             C146 108 150 88 158 74
+             C164 62 160 50 148 46
+             C138 43 126 44 118 46"/>
+    <path d="M124 78c6-1 11 1 13 5"/>
+    <path d="M132 86c3 3 3.5 7 1 11"/>
+    <path d="M122 108c6 4 14 3 18-1"/>
+  </g>
+</svg>

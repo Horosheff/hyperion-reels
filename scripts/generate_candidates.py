@@ -9,6 +9,7 @@ from pathlib import Path
 
 from review_utils import clean, clip_text, has_payoff, write_json
 from videoshorts_core import analyze_hook_quality_2026, configure_stdio, segments_from_json
+from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode, stamp_heuristic
 
 configure_stdio()
 
@@ -55,13 +56,24 @@ def build_candidates(transcript: dict, min_sec: float, max_sec: float, target: i
     if not segments:
         return {"schema_version": 1, "candidates": [], "summary": {"total": 0}}
 
-    duration = max(0.0, segments[-1].end - segments[0].start)
-    window = max(min_sec, min(max_sec, (min_sec + max_sec) / 2))
-    # Draft mode samples densely enough for review, but keeps JSON compact.
-    step = max(6.0, window / 3.5)
+    # Variable windows: short / mid / long buckets from brief range (not fixed midpoint).
+    span = max(0.0, max_sec - min_sec)
+    mid = min_sec + span * 0.5
+    short_w = max(min_sec, min(max_sec, min_sec + span * 0.25))
+    mid_w = max(min_sec, min(max_sec, mid))
+    long_w = max(min_sec, min(max_sec, max_sec - min(12.0, span * 0.15)))
+    windows = [short_w, mid_w, long_w]
+    if span >= 40:
+        # Extra long near ceiling when UI asks e.g. 30–90
+        windows.append(max(min_sec, min(max_sec, max_sec - 5.0)))
+
+    step = max(6.0, mid_w / 3.5)
     t = max(0.0, segments[0].start)
     raw: list[dict] = []
+    window_i = 0
     while t < segments[-1].end - min_sec:
+        window = windows[window_i % len(windows)]
+        window_i += 1
         start = t
         end = min(start + window, segments[-1].end)
         if end - start >= min_sec:
@@ -113,6 +125,7 @@ def build_candidates(transcript: dict, min_sec: float, max_sec: float, target: i
             ),
         })
 
+    durations = [float(item.get("duration") or 0) for item in selected]
     return {
         "schema_version": 1,
         "artifact": "candidate-moments",
@@ -120,14 +133,20 @@ def build_candidates(transcript: dict, min_sec: float, max_sec: float, target: i
         "local_fallback_note": "Скрипт создаёт список кандидатов для диагностики; в Agent mode финальное решение принимает videoshorts-candidate-generator.",
         "selection_contract": {
             "target_candidates": "30-80",
+            "min_sec": min_sec,
+            "max_sec": max_sec,
             "required_fields": ["candidate_reason", "hook_type", "audience_pain", "possible_title", "why_not_cut_yet"],
             "scripts_are_tools_only": True,
+            "duration_policy": "variable_short_mid_long_from_brief",
         },
         "candidates": selected,
         "summary": {
             "total": len(selected),
             "with_payoff_signal": sum(1 for item in selected if item.get("has_payoff_signal")),
             "average_score": round(sum(item.get("score", 0) for item in selected) / len(selected), 2) if selected else 0,
+            "duration_min": round(min(durations), 3) if durations else 0,
+            "duration_max": round(max(durations), 3) if durations else 0,
+            "duration_avg": round(sum(durations) / len(durations), 3) if durations else 0,
         },
     }
 
@@ -139,7 +158,10 @@ def main() -> None:
     parser.add_argument("--min", type=float, default=30, dest="min_sec")
     parser.add_argument("--max", type=float, default=60, dest="max_sec")
     parser.add_argument("--target", type=int, default=60)
+    add_decision_mode_args(parser)
     args = parser.parse_args()
+    _artifact_path = args.output or (args.transcript.resolve().parents[2] / 'moments' / 'candidate-moments.json')
+    enforce_decision_mode(args, kind='candidates', path=_artifact_path)
     if not args.transcript.is_file():
         print(f"[ERROR] Transcript not found: {args.transcript}", file=sys.stderr)
         sys.exit(1)
@@ -149,7 +171,7 @@ def main() -> None:
     target = max(30, min(80, args.target))
     payload = build_candidates(transcript, args.min_sec, args.max_sec, target)
     out = args.output or (args.transcript.parents[1] / "moments" / "candidate-moments.json")
-    write_json(out, payload)
+    write_json(out, stamp_heuristic(payload, 'generate_candidates'))
     print(f"✅ Candidate moments: {out} ({payload['summary']['total']})")
 
 

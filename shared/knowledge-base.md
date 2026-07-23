@@ -60,26 +60,18 @@ video → audio.wav → Whisper (subprocess worker) → select_clips (hook 2026)
 
 ## Маппинг на субагентов VideoShorts
 
+Контракт: `shared/agent-decision-contract.md` — **агент пишет decision JSON**, скрипт только механика или local `--heuristic`.
 
-
-| Шаг оригинала | Субагент | Скрипт |
-
-|---------------|----------|--------|
-
+| Шаг оригинала | Субагент | Инструмент |
+|---------------|----------|------------|
 | Upload / brief | videoshorts-intake | — |
-
-| extract_audio + transcribe | videoshorts-transcriber | transcribe.py, transcribe_worker.py |
-
-| clip selection | videoshorts-moment-finder | find_moments.py, clip_selector.py, write_agent_decisions.py |
-| agent decision evidence | videoshorts-moment-finder + scorekeeper + boundary-refiner | clip-decisions.json |
-
-| dual-screen cut | videoshorts-cutter | cut_clips.py, videoshorts_core.py |
-
-| ASS/SRT generation | videoshorts-subtitle-writer | write_subtitles.py, subtitle_engine.py |
-
-| burn + effects + sidecar export | videoshorts-subtitle-burner + packager | burn_subtitles.py, package_outputs.py |
-
-| QA | videoshorts-guardian | qa_clips.py |
+| extract_audio + transcribe | videoshorts-transcriber | transcribe.py (механика) |
+| cleanup / candidates / moments / scores / editor / virality / boundaries / dramaturgy / montage / decisions / metadata / post-render | соответствующие субагенты | **Write JSON** + `validate_agent_artifacts.py` |
+| dual-screen cut | videoshorts-cutter | cut_clips.py |
+| ASS/SRT | videoshorts-subtitle-writer | write_subtitles.py |
+| burn + package | subtitle-burner + packager | burn_subtitles.py, package_outputs.py |
+| QA metrics | videoshorts-guardian | qa_clips.py (ffprobe) |
+| Local diagnostic only | — | `run_pipeline.py` + `--heuristic` на decision-скриптах |
 
 
 
@@ -97,7 +89,7 @@ video → audio.wav → Whisper (subprocess worker) → select_clips (hook 2026)
 
 | Клипов | 10 |
 
-| Длина | 30–60 сек |
+| Длина | из brief `min_sec`–`max_sec` (UI default часто 30–60 или 30–90); переменная, не все ~45s |
 
 | Разрешение | 720×1280 |
 

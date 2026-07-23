@@ -16,10 +16,15 @@ import subprocess
 import sys
 import time
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
+
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = PLUGIN_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 from profile_system import PROFILE_PATH, build_profile
 
@@ -183,7 +188,7 @@ def read_latest_results() -> dict | None:
     if not LATEST_RESULTS_PATH.is_file():
         return None
     try:
-        return json.loads(LATEST_RESULTS_PATH.read_text(encoding="utf-8"))
+        return json.loads(LATEST_RESULTS_PATH.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -256,7 +261,9 @@ def build_command(video_path: Path, settings: dict) -> list[str]:
         "--template",
         str(settings.get("template") or "mrbeast"),
         "--profile",
-        str(settings.get("profile") or "webinar"),
+        str(settings.get("profile") or "education"),
+        "--layout",
+        str(settings.get("layout") or settings.get("profile") or "regular"),
         "--subtitle-format",
         str(settings.get("subtitleFormat") or "both"),
         "--memory-root",
@@ -266,11 +273,12 @@ def build_command(video_path: Path, settings: dict) -> list[str]:
     ]
 
     language = str(settings.get("language") or "").strip()
-    if language:
+    if language and language.lower() not in {"auto", "none", ""}:
         cmd += ["--language", language]
     if str(settings.get("device") or "gpu") == "cpu":
         cmd.append("--force-cpu")
     cmd.append("--word-timestamps" if parse_bool(settings.get("wordTimestamps"), True) else "--no-word-timestamps")
+    cmd.append("--loudnorm" if parse_bool(settings.get("loudnorm"), True) else "--no-loudnorm")
     if not parse_bool(settings.get("subtitles"), True):
         cmd.append("--skip-subtitles")
     if not parse_bool(settings.get("burn"), True):
@@ -320,10 +328,12 @@ def write_brief(video_path: Path, settings: dict, command: list[str], log_path: 
         f"whisper_model: {settings.get('model', 'base')}",
         f"language: {settings.get('language') or 'auto'}",
         f"subtitle_template: {settings.get('template', 'mrbeast')}",
-        f"metadata_profile: {settings.get('profile', 'webinar')}",
+        f"metadata_profile: {settings.get('profile', 'education')}",
+        f"layout: {settings.get('layout') or settings.get('splitRatio') or 'regular'}",
         f"subtitle_format: {settings.get('subtitleFormat', 'both')}",
         f"quality_preset: {settings.get('qualityPreset', 'release')}",
         f"word_timestamps: {parse_bool(settings.get('wordTimestamps'), True)}",
+        f"loudnorm: {parse_bool(settings.get('loudnorm'), True)}",
         f"subtitles_enable: {parse_bool(settings.get('subtitles'), True)}",
         f"burn: {parse_bool(settings.get('burn'), True)}",
         f"qa: {parse_bool(settings.get('qa'), True)}",
@@ -332,6 +342,8 @@ def write_brief(video_path: Path, settings: dict, command: list[str], log_path: 
         f"zoomPunch: {parse_bool(settings.get('zoomPunch'), False)}",
         f"bRoll: {parse_bool(settings.get('bRoll'), False)}",
         f"bRollMax: {broll_max(settings.get('bRollMax'))}",
+        f"emojiSubtitles: {parse_bool(settings.get('emojiSubtitles'), False)}",
+        f"hookStyle: {parse_bool(settings.get('hookStyle'), False)}",
         f"log_path: {log_path}",
         "agent_chain: " + " -> ".join(AGENT_CHAIN),
         "",
@@ -482,7 +494,13 @@ def start_local_pipeline(video_path: Path, settings: dict) -> dict:
 
 def start_request(video_path: Path, settings: dict) -> dict:
     run_mode = normalize_run_mode(settings.get("runMode"))
-    settings = {**settings, "runMode": run_mode}
+    try:
+        from videoshorts_core import metadata_profile_for_layout, normalize_layout_mode
+        layout = normalize_layout_mode(settings.get("layout") or settings.get("splitRatio") or "regular")
+        profile = str(settings.get("profile") or "").strip() or metadata_profile_for_layout(layout)
+        settings = {**settings, "runMode": run_mode, "layout": layout, "profile": profile}
+    except Exception:
+        settings = {**settings, "runMode": run_mode}
     if run_mode == "local":
         return start_local_pipeline(video_path, settings)
     return prepare_agent_request(video_path, settings)
@@ -497,6 +515,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+        if path in {"/user_promo_avatar.png"}:
+            self.serve_file(UI_DIR / "user_promo_avatar.png", "image/png")
+            return
+        if path in {"/hyperion-mark.png", "/ui/hyperion-mark.png"}:
+            self.serve_file(UI_DIR / "hyperion-mark.png", "image/png")
+            return
+        if path in {"/hyperion-mark.svg", "/ui/hyperion-mark.svg"}:
+            self.serve_file(UI_DIR / "hyperion-mark.svg", "image/svg+xml")
+            return
         if path in {"/", "/upload", "/upload.html", "/videoshorts-upload.html"}:
             self.serve_file(UI_DIR / "videoshorts-upload.html", "text/html; charset=utf-8")
             return
@@ -504,7 +531,7 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_file(UI_DIR / "videoshorts-results.html", "text/html; charset=utf-8")
             return
         if path == "/api/status":
-            data = json.loads(RUN_STATUS_PATH.read_text(encoding="utf-8")) if RUN_STATUS_PATH.is_file() else {"status": "IDLE"}
+            data = json.loads(RUN_STATUS_PATH.read_text(encoding="utf-8-sig")) if RUN_STATUS_PATH.is_file() else {"status": "IDLE"}
             json_response(self, merge_status_with_results(data))
             return
         if path == "/api/config":
@@ -530,6 +557,52 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self, {"ok": False, "error": "latest-results.json не найден.", "path": str(LATEST_RESULTS_PATH)}, status=404)
                 return
             json_response(self, {"ok": True, "path": str(LATEST_RESULTS_PATH), "data": latest})
+            return
+        if path == "/api/covers-progress":
+            query = parse_qs(parsed.query)
+            raw_path = query.get("clips_dir", [""])[0]
+            clips_dir = Path(raw_path).expanduser() if raw_path else Path()
+            if not clips_dir.is_dir():
+                json_response(self, {"ok": False, "error": "clips_dir not found"}, status=400)
+                return
+            resolved = clips_dir.resolve()
+            try:
+                resolved.relative_to(PLUGIN_ROOT.resolve())
+            except ValueError:
+                json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
+                return
+            progress_path = resolved / "covers-progress.json"
+            if not progress_path.is_file():
+                json_response(self, {"ok": True, "status": "idle", "pct": 0, "message": "Ожидание…"})
+                return
+            try:
+                data = json.loads(progress_path.read_text(encoding="utf-8-sig"))
+            except Exception as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=500)
+                return
+            json_response(self, {"ok": True, **(data if isinstance(data, dict) else {})})
+            return
+        if path == "/api/dzen-status":
+            query = parse_qs(parsed.query)
+            raw_path = query.get("clips_dir", [""])[0]
+            clips_dir = None
+            if raw_path:
+                clips_dir = Path(raw_path).expanduser()
+                if clips_dir.is_dir():
+                    try:
+                        clips_dir.resolve().relative_to(PLUGIN_ROOT.resolve())
+                    except ValueError:
+                        json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
+                        return
+                else:
+                    clips_dir = None
+            if str(SCRIPTS_DIR) not in sys.path:
+                sys.path.insert(0, str(SCRIPTS_DIR))
+            try:
+                from publish_dzen import status_payload
+                json_response(self, status_payload(clips_dir))
+            except Exception as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
         if path == "/api/media":
             query = parse_qs(parsed.query)
@@ -562,6 +635,200 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = unquote(urlparse(self.path).path)
+        if path == "/api/prepare-publish":
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                raw = self.rfile.read(length) if length else b"{}"
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                clips_dir = Path(str(payload.get("clips_dir") or "")).expanduser()
+                selected = payload.get("selected") or []
+                if not clips_dir.is_dir():
+                    json_response(self, {"ok": False, "error": f"clips_dir not found: {clips_dir}"}, status=400)
+                    return
+                # Security: only inside plugin root
+                resolved = clips_dir.resolve()
+                root = PLUGIN_ROOT.resolve()
+                try:
+                    resolved.relative_to(root)
+                except ValueError:
+                    json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
+                    return
+                if str(SCRIPTS_DIR) not in sys.path:
+                    sys.path.insert(0, str(SCRIPTS_DIR))
+                from publish_selection import save_selection
+                from videoshorts_core import write_latest_results
+                selection_path = save_selection(resolved, selected)
+                progress_seed = {
+                    "status": "running",
+                    "phase": "queued",
+                    "message": f"Старт · {len(selected)} обложк(и)…",
+                    "current": 0,
+                    "total": len(selected),
+                    "pct": 2,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                (resolved / "covers-progress.json").write_text(
+                    json.dumps(progress_seed, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                covers = subprocess.run(
+                    [sys.executable, str(SCRIPTS_DIR / "prepare_covers.py"), str(resolved), "--mode", "auto"],
+                    cwd=str(SCRIPTS_DIR),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                queue = subprocess.run(
+                    [sys.executable, str(SCRIPTS_DIR / "prepare_publish_queue.py"), str(resolved)],
+                    cwd=str(SCRIPTS_DIR),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                queue_path = resolved / "publish-queue.json"
+                covers_manifest_path = resolved / "covers-manifest.json"
+                queue_data = {}
+                covers_manifest = {}
+                if queue_path.is_file():
+                    queue_data = json.loads(queue_path.read_text(encoding="utf-8-sig"))
+                if covers_manifest_path.is_file():
+                    covers_manifest = json.loads(covers_manifest_path.read_text(encoding="utf-8-sig"))
+                ok = covers.returncode == 0 and queue.returncode == 0
+                if ok:
+                    write_latest_results(resolved, status="PASS")
+                cover_items = [
+                    {
+                        "index": c.get("index"),
+                        "cover_path": c.get("cover_path"),
+                        "cover_text": c.get("cover_text"),
+                        "ok": c.get("ok"),
+                    }
+                    for c in (covers_manifest.get("covers") or [])
+                    if isinstance(c, dict)
+                ]
+                json_response(self, {
+                    "ok": ok,
+                    "selection_path": str(selection_path),
+                    "queue_path": str(queue_path) if queue_path.is_file() else None,
+                    "status": queue_data.get("status"),
+                    "ready_count": queue_data.get("ready_count"),
+                    "covers_ready": covers_manifest.get("ready_count"),
+                    "covers": cover_items,
+                    "blockers": queue_data.get("blockers") or [],
+                    "covers_stdout": covers.stdout,
+                    "queue_stdout": queue.stdout,
+                    "error": None if ok else (covers.stderr or queue.stderr or covers.stdout or queue.stdout or "prepare failed"),
+                }, status=200 if ok else 500)
+            except Exception as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=500)
+            return
+        if path == "/api/dzen-login":
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                raw = self.rfile.read(length) if length else b"{}"
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                clips_dir = Path(str(payload.get("clips_dir") or "")).expanduser() if payload.get("clips_dir") else None
+                resolved = None
+                if clips_dir and clips_dir.is_dir():
+                    resolved = clips_dir.resolve()
+                    try:
+                        resolved.relative_to(PLUGIN_ROOT.resolve())
+                    except ValueError:
+                        json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
+                        return
+                cmd = [sys.executable, str(SCRIPTS_DIR / "publish_dzen.py"), "--login-only"]
+                if resolved is not None:
+                    cmd.insert(2, str(resolved))
+                proc = subprocess.run(
+                    cmd,
+                    cwd=str(SCRIPTS_DIR),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if str(SCRIPTS_DIR) not in sys.path:
+                    sys.path.insert(0, str(SCRIPTS_DIR))
+                from publish_dzen import status_payload
+                status = status_payload(resolved)
+                json_response(self, {
+                    "ok": proc.returncode == 0,
+                    "stdout": proc.stdout,
+                    "stderr": proc.stderr,
+                    "error": None if proc.returncode == 0 else (proc.stderr or proc.stdout or "dzen login failed"),
+                    **status,
+                }, status=200 if proc.returncode == 0 else 500)
+            except Exception as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=500)
+            return
+        if path == "/api/publish-dzen":
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                raw = self.rfile.read(length) if length else b"{}"
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                clips_dir = Path(str(payload.get("clips_dir") or "")).expanduser()
+                index = payload.get("index")
+                draft = bool(payload.get("draft"))
+                if not clips_dir.is_dir():
+                    json_response(self, {"ok": False, "error": f"clips_dir not found: {clips_dir}"}, status=400)
+                    return
+                resolved = clips_dir.resolve()
+                try:
+                    resolved.relative_to(PLUGIN_ROOT.resolve())
+                except ValueError:
+                    json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
+                    return
+                try:
+                    index = int(index)
+                except (TypeError, ValueError):
+                    json_response(self, {"ok": False, "error": "index required"}, status=400)
+                    return
+                cmd = [
+                    sys.executable,
+                    str(SCRIPTS_DIR / "publish_dzen.py"),
+                    str(resolved),
+                    "--index",
+                    str(index),
+                ]
+                if draft:
+                    cmd.append("--draft")
+                proc = subprocess.run(
+                    cmd,
+                    cwd=str(SCRIPTS_DIR),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                log_path = resolved / "dzen-publish-log.json"
+                log_data = {}
+                if log_path.is_file():
+                    try:
+                        log_data = json.loads(log_path.read_text(encoding="utf-8-sig"))
+                    except Exception:
+                        log_data = {}
+                try:
+                    from videoshorts_core import write_latest_results
+                    if proc.returncode == 0:
+                        if str(SCRIPTS_DIR) not in sys.path:
+                            sys.path.insert(0, str(SCRIPTS_DIR))
+                        write_latest_results(resolved, status="PASS")
+                except Exception:
+                    pass
+                json_response(self, {
+                    "ok": proc.returncode == 0,
+                    "index": index,
+                    "draft": draft,
+                    "log": log_data,
+                    "stdout": proc.stdout,
+                    "stderr": proc.stderr,
+                    "error": None if proc.returncode == 0 else (proc.stderr or proc.stdout or "dzen publish failed"),
+                }, status=200 if proc.returncode == 0 else 500)
+            except Exception as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=500)
+            return
         if path == "/api/dependencies":
             if ensure_dependencies is None:
                 json_response(self, {"ok": False, "error": "ensure_dependencies.py недоступен"}, status=500)
@@ -602,7 +869,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    # Browser cancels range seeks / closes tabs mid-stream.
+    _CLIENT_GONE = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)
+
     def serve_file(self, path: Path, content_type: str) -> None:
+        started = False
         try:
             resolved = path.resolve()
             if not str(resolved).startswith(str(PLUGIN_ROOT.resolve())) or not resolved.is_file():
@@ -613,11 +884,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
+            started = True
             self.wfile.write(body)
+        except self._CLIENT_GONE:
+            return
         except OSError:
-            self.send_error(404)
+            if not started:
+                try:
+                    self.send_error(404)
+                except (*self._CLIENT_GONE, OSError):
+                    return
 
     def serve_media(self, path: Path) -> None:
+        started = False
         try:
             resolved = path.resolve()
             memory_root = MEMORY_ROOT.resolve()
@@ -650,6 +929,7 @@ class Handler(BaseHTTPRequestHandler):
             if status == 206:
                 self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
             self.end_headers()
+            started = True
             with resolved.open("rb") as fh:
                 fh.seek(start)
                 remaining = chunk_size
@@ -659,8 +939,15 @@ class Handler(BaseHTTPRequestHandler):
                         break
                     remaining -= len(chunk)
                     self.wfile.write(chunk)
+        except self._CLIENT_GONE:
+            # Normal when <video> seeks or the Results page aborts preload.
+            return
         except OSError:
-            self.send_error(404)
+            if not started:
+                try:
+                    self.send_error(404)
+                except (*self._CLIENT_GONE, OSError):
+                    return
 
     @staticmethod
     def guess_content_type(path: str) -> str:

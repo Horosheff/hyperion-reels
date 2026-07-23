@@ -60,17 +60,36 @@ def main() -> None:
             print(f"[ERROR] QA status={qa.get('status')!r} — publish запрещён", file=sys.stderr)
             sys.exit(2)
 
-    # Reject packaging when post-render explicitly disapproves
+    manifest_src = src / "manifest.json"
+    manifest = json.loads(manifest_src.read_text(encoding="utf-8")) if manifest_src.is_file() else {"clips": []}
+    manifest_final_files = {
+        str(c.get("final_file") or c.get("file") or "")
+        for c in manifest.get("clips", [])
+        if isinstance(c, dict)
+    }
+    manifest_indices = {
+        str(c.get("index"))
+        for c in manifest.get("clips", [])
+        if isinstance(c, dict) and c.get("index") is not None
+    }
+
+    # Reject packaging when post-render explicitly disapproves a clip in manifest
     post_render_path = src / "post-render-review.json"
     if post_render_path.is_file():
         try:
             pr = json.loads(post_render_path.read_text(encoding="utf-8"))
             disapproved = [
                 c for c in (pr.get("clips") or [])
-                if isinstance(c, dict) and c.get("approve") is False
+                if isinstance(c, dict)
+                and c.get("approve") is False
+                and (
+                    str(c.get("file") or "") in manifest_final_files
+                    or str(c.get("index")) in manifest_indices
+                )
             ]
             if require_agent and disapproved:
-                print(f"[ERROR] post-render approve=false for {len(disapproved)} clip(s)", file=sys.stderr)
+                names = ", ".join(str(c.get("file") or c.get("index")) for c in disapproved)
+                print(f"[ERROR] post-render approve=false for publishable clip(s): {names}", file=sys.stderr)
                 sys.exit(2)
         except Exception:
             pass
@@ -78,8 +97,6 @@ def main() -> None:
     publish = args.publish_dir or (src.parent / f"{src.name}-publish")
     publish.mkdir(parents=True, exist_ok=True)
 
-    manifest_src = src / "manifest.json"
-    manifest = json.loads(manifest_src.read_text(encoding="utf-8")) if manifest_src.is_file() else {"clips": []}
     sub_manifest_path = src / "subtitles-manifest.json"
     sub_manifest = json.loads(sub_manifest_path.read_text(encoding="utf-8")) if sub_manifest_path.is_file() else {}
     metadata_manifest_path = src / "metadata-manifest.json"
@@ -208,18 +225,34 @@ def main() -> None:
                 shutil.copy2(side, dest_sub)
                 entry[ext.lstrip(".")] = side.name
         metadata = metadata_by_index.get(str(int(idx)) if idx.isdigit() else idx) or {}
+        meta_dir = src / "metadata"
+        json_name = metadata.get("json") if metadata else None
+        md_name = metadata.get("markdown") if metadata else None
+        if idx.isdigit():
+            pad = f"{int(idx):02d}"
+            if not json_name:
+                json_name = f"clip_{pad}.metadata.json"
+            if not md_name:
+                # Fallback when manifest has json but markdown=null/absent
+                if json_name and str(json_name).endswith(".metadata.json"):
+                    md_name = str(json_name).replace(".metadata.json", ".metadata.md")
+                else:
+                    md_name = f"clip_{pad}.metadata.md"
+        for key, name in (("metadata_json", json_name), ("metadata_markdown", md_name)):
+            if name and (meta_dir / str(name)).is_file():
+                shutil.copy2(meta_dir / str(name), publish / str(name))
+                entry[key] = str(name)
         if metadata:
-            meta_dir = src / "metadata"
-            for key, name in (("metadata_json", metadata.get("json")), ("metadata_markdown", metadata.get("markdown"))):
-                if name and (meta_dir / str(name)).is_file():
-                    shutil.copy2(meta_dir / str(name), publish / str(name))
-                    entry[key] = str(name)
             entry["metadata"] = {
                 "title": metadata.get("title"),
                 "description": metadata.get("description"),
                 "hashtags": metadata.get("hashtags"),
                 "pinned_comment": metadata.get("pinned_comment"),
                 "cover_prompt": metadata.get("cover_prompt"),
+                "cover_text": metadata.get("cover_text"),
+                "seo_keywords": metadata.get("seo_keywords"),
+                "platforms": metadata.get("platforms"),
+                "copy_block": metadata.get("copy_block"),
             }
         packaged.append(entry)
 

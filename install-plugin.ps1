@@ -1,14 +1,23 @@
-# Installs VideoShorts plugin to Cursor local plugins folder.
+# Installs Гиперион (Hyperion) plugin to Cursor local plugins folder.
 # From plugin root: .\install-plugin.ps1
 
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$dest = Join-Path $env:USERPROFILE ".cursor\plugins\local\videoshorts"
+$dest = Join-Path $env:USERPROFILE ".cursor\plugins\local\hyperion"
+$legacyDest = Join-Path $env:USERPROFILE ".cursor\plugins\local\videoshorts"
 
-Write-Host "VideoShorts: copying..." -ForegroundColor Cyan
+Write-Host "Гиперион: copying..." -ForegroundColor Cyan
 Write-Host "  from: $here"
 Write-Host "  to:   $dest"
 
+if (Test-Path $legacyDest) {
+  try {
+    Remove-Item -Path $legacyDest -Recurse -Force
+    Write-Host "  removed legacy plugin folder: $legacyDest" -ForegroundColor DarkGray
+  } catch {
+    Write-Host "  legacy folder busy (ok to ignore): $legacyDest" -ForegroundColor Yellow
+  }
+}
 if (Test-Path $dest) {
   try {
     Remove-Item -Path $dest -Recurse -Force

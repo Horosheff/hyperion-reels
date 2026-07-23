@@ -3,453 +3,1258 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>VideoShorts - результаты</title>
+  <title>Гиперион — Результаты и публикация</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@700;800&family=Inter:wght@400;500;600;700&family=Orbitron:wght@700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f7f6f2;
-      --bg-glow: radial-gradient(circle at 50% -10%, #ffffff 0%, #f7f6f2 58%, #ece9df 100%);
-      --panel: rgba(255, 255, 255, 0.88);
-      --panel-2: #f1f0ea;
-      --text: #080808;
-      --muted: #60646c;
-      --line: rgba(8, 8, 8, 0.12);
-      --accent: #080808;
-      --ok: #087443;
-      --warn: #b54708;
-      --bad: #d92d20;
+      --bg: #e9eef3;
+      --white: #ffffff;
+      --ink: #0b1220;
+      --muted: #8b95a5;
+      --line: #e8ecf1;
+      --blue: #0066FF;
+      --blue-hover: #0052cc;
+      --blue-soft: #eaf2ff;
+      --font: "Inter", system-ui, -apple-system, sans-serif;
+      --brand-font: "Orbitron", "Exo 2", system-ui, sans-serif;
+      --brand-cyr: "Exo 2", "Orbitron", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+      --fs-xs: 11px;
+      --fs-sm: 12px;
+      --fs-md: 13px;
+      --fs-base: 14px;
+      --fs-lg: 15px;
+      --fs-xl: 18px;
+      --fs-2xl: 22px;
+      --fs-3xl: 28px;
+      --fs-4xl: 32px;
+      --fw-regular: 400;
+      --fw-medium: 500;
+      --fw-semibold: 600;
+      --fw-bold: 700;
+      --r-sm: 12px;
+      --r-md: 16px;
+      --r-lg: 20px;
+      --r-xl: 24px;
+      --ico: 20px;
     }
-    * { box-sizing: border-box; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-    body {
+
+    * { box-sizing: border-box; }
+    html, body {
       margin: 0;
+      min-height: 100%;
       background: var(--bg);
-      background-image: var(--bg-glow);
-      background-repeat: no-repeat;
-      background-attachment: fixed;
-      color: var(--text);
-      font-family: 'Plus Jakarta Sans', Inter, Segoe UI, Arial, sans-serif;
+      color: var(--ink);
+      font-family: var(--font);
+      font-size: var(--fs-base);
+      font-weight: var(--fw-regular);
       line-height: 1.45;
+      letter-spacing: -0.01em;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
     }
-    main { max-width: 1480px; margin: 0 auto; padding: 40px 24px; }
-    header { display: flex; justify-content: space-between; gap: 18px; align-items: center; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
-    h1, h2 { margin: 0; line-height: 1.15; }
-    h1 { font-size: 32px; color: var(--text); }
-    h2 { font-size: 19px; margin-bottom: 12px; }
-    p { margin: 0; color: var(--muted); }
-    code, textarea { font-family: Consolas, "Cascadia Mono", monospace; }
-    .card {
-      background: var(--panel);
+    .shell {
+      min-height: 100vh;
+      padding: 16px;
+      overflow: visible;
+    }
+    .panel {
+      min-height: calc(100vh - 32px);
+      background: var(--white);
+      border-radius: var(--r-xl);
+      padding: 20px 24px 24px;
+      box-shadow: 0 12px 40px rgba(15, 23, 42, 0.05);
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 20px;
+      overflow: visible;
+    }
+    .nav-ico {
+      width: var(--ico);
+      height: var(--ico);
+      flex: 0 0 var(--ico);
+      display: block;
+    }
+    .top {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--ink);
+    }
+
+    .brand-mark {
+      width: 72px;
+      height: 72px;
+      border-radius: 0;
+      background: transparent;
+      color: #0066FF;
+      display: grid;
+      place-items: center;
+      box-shadow: none;
+      overflow: visible;
+      flex: 0 0 72px;
+      padding: 0;
+      border: none;
+    }
+
+    .brand-mark img,
+    .brand-mark svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+      transform: none;
+      background: #fff;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      line-height: 1;
+    }
+
+    .brand-name {
+      font-family: var(--brand-cyr);
+      font-weight: 800;
+      font-size: 26px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #0b1220;
+    }
+
+    .brand-name-ru {
+      font-family: var(--brand-cyr);
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--blue);
+    }
+
+    .brand-sub {
+      display: none;
+    }
+
+    .nav {
+      justify-self: center;
+      display: flex;
+      gap: 2px;
+      padding: 4px;
+      background: #f2f5f8;
+      border-radius: 999px;
+    }
+
+    .nav a {
+      padding: 8px 16px;
+      border-radius: 999px;
+      text-decoration: none;
+      color: var(--muted);
+      font-size: var(--fs-md);
+      font-weight: var(--fw-medium);
+    }
+
+    .nav a.active {
+      background: var(--blue);
+      color: #fff;
+      font-weight: var(--fw-semibold);
+      box-shadow: 0 4px 12px rgba(0, 102, 255, 0.22);
+    }
+
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      display: grid;
+      place-items: center;
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    .icon-btn svg { display: block; }
+
+    .user-chip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 12px 4px 4px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f8fafc;
+      text-decoration: none;
+      color: var(--ink);
+    }
+
+    .user-chip img {
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      object-fit: cover;
+      object-position: top center;
+      border: 1.5px solid var(--blue);
+      background: #dbeafe;
+    }
+
+    .user-chip b {
+      display: block;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
+      line-height: 1.15;
+    }
+    .user-chip span {
+      display: block;
+      font-size: var(--fs-xs);
+      color: var(--blue);
+      font-weight: var(--fw-medium);
+    }
+    .body {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+      gap: 28px;
+      min-height: 0;
+      overflow: visible;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow: visible;
+      padding-top: 72px;
+    }
+
+    .hello h1 {
+      margin: 0 0 6px;
+      font-size: var(--fs-3xl);
+      font-weight: var(--fw-semibold);
+      letter-spacing: -0.035em;
+      line-height: 1.15;
+    }
+
+    .hello p {
+      margin: 0;
+      color: var(--muted);
+      font-size: var(--fs-md);
+      font-weight: var(--fw-regular);
+    }
+
+    .menu-label {
+      margin: 0 0 10px;
+      font-size: 10px;
+      font-weight: var(--fw-semibold);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .menu {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .menu a, .menu .item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      text-decoration: none;
+      color: var(--muted);
+      font-size: var(--fs-base);
+      font-weight: var(--fw-medium);
+    }
+
+    .menu a:hover { background: #f5f7fa; color: var(--ink); }
+    .menu .item.active {
+      background: var(--ink);
+      color: #fff;
+      font-weight: var(--fw-semibold);
+      box-shadow: 0 8px 18px rgba(11, 18, 32, 0.14);
+    }
+    .menu .left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .menu .chev {
+      width: 16px;
+      height: 16px;
+      opacity: 0.55;
+    }
+
+    .promo {
+      margin-top: auto;
+      position: relative;
+      overflow: visible;
+      background: var(--blue);
+      color: #fff;
+      border-radius: var(--r-xl);
+      min-height: 348px;
+      height: 348px;
+      padding: 22px 18px 20px;
+      box-shadow: 0 16px 34px rgba(0, 102, 255, 0.3);
+    }
+    .promo-copy {
+      position: relative;
+      z-index: 2;
+      width: 46%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .promo-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.22);
+      display: grid;
+      place-items: center;
+    }
+    .promo-copy h3 { margin: 8px 0 0; font-size: var(--fs-xl); line-height: 1.2; font-weight: var(--fw-semibold); }
+    .promo-copy p { margin: 8px 0 0; font-size: var(--fs-sm); font-weight: var(--fw-regular); line-height: 1.4; opacity: 0.9; max-width: 12rem; }
+    .promo-btn {
+      display: inline-flex;
+      width: fit-content;
+      margin-top: auto;
+      padding: 11px 16px;
+      border-radius: 999px;
+      background: var(--ink);
+      color: #fff;
+      text-decoration: none;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
+    }
+    .promo-cutout {
+      position: absolute;
+      right: -40px;
+      bottom: -14px;
+      width: 96%;
+      height: 172%;
+      object-fit: contain;
+      object-position: bottom right;
+      z-index: 1;
+      pointer-events: none;
+      filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.24));
+    }
+    .main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .stat {
+      background: #f8fafc;
       border: 1px solid var(--line);
       border-radius: 20px;
-      padding: 24px;
-      margin-bottom: 18px;
-      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.06);
+      padding: 16px 18px;
     }
-    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-    .clip-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 18px; align-items: start; }
-    .clip-card { padding: 0; overflow: hidden; }
-    .clip-card-body { padding: 18px; display: grid; gap: 14px; }
-    .video-shell { background: #050505; border-bottom: 1px solid var(--line); display: grid; place-items: center; min-height: 520px; }
-    .clip-video { width: min(100%, 430px); aspect-ratio: 9 / 16; max-height: 76vh; background: #000; display: block; object-fit: contain; }
-    .meta-box { display: grid; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
-    .meta-box h3 { margin: 0; font-size: 14px; }
-    .copy-field { display: grid; gap: 6px; }
-    .copy-field label { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-    .copy-field pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.45; color: var(--text); background: var(--panel-2); border-radius: 10px; padding: 10px; }
-    .evidence { color: var(--muted); font-size: 12px; display: grid; gap: 8px; }
-    .evidence b { color: var(--text); }
-    .stat {
-      display: grid;
-      gap: 4px;
-      background: var(--panel);
+    .stat b { display: block; font-size: 26px; letter-spacing: -0.03em; }
+    .stat span { display: block; margin-top: 4px; font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--muted); text-transform: uppercase; }
+    .card {
+      background: #fff;
       border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 16px;
+      border-radius: var(--r-lg);
+      padding: 18px;
     }
-    .stat b { font-size: 28px; color: var(--text); }
-    button, .button {
-      border: 1px solid var(--line);
-      background: var(--panel-2);
-      color: var(--text);
-      border-radius: 10px;
-      padding: 10px 14px;
-      font-weight: 700;
+    .card-dark {
+      background: var(--ink);
+      color: #fff;
+      border-radius: var(--r-lg);
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .card-dark h2 { margin: 0 0 4px; font-size: var(--fs-xl); }
+    .card-dark p { margin: 0; color: #94a3b8; font-size: var(--fs-sm); }
+    .btn-blue, .btn-dark {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       text-decoration: none;
+    }
+    .btn-blue { background: var(--blue); color: #fff; box-shadow: 0 8px 18px rgba(0, 102, 255, 0.28); }
+    .btn-dark { background: var(--ink); color: #fff; }
+    .clips {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .clip {
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      background: #fff;
+    }
+    .video-shell {
+      background: #000;
+      aspect-ratio: 9 / 16;
+      max-height: 460px;
+    }
+    .video-shell video, .video-shell .placeholder, .video-shell img.cover-preview {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .cover-panel {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border-radius: 14px;
+      background: #0b1220;
+      color: #fff;
+    }
+    .cover-panel img {
+      width: 100%;
+      aspect-ratio: 9 / 16;
+      object-fit: cover;
+      border-radius: 10px;
+      background: #111827;
+    }
+    .cover-panel .cover-meta {
+      font-size: 12px;
+      color: #93c5fd;
+      font-weight: var(--fw-semibold);
+    }
+    .cover-empty {
+      aspect-ratio: 9 / 16;
+      border-radius: 10px;
+      border: 1px dashed #334155;
+      display: grid;
+      place-items: center;
+      color: #64748b;
+      font-size: 12px;
+      text-align: center;
+      padding: 12px;
+      background: linear-gradient(180deg, #111827, #0b1220);
+    }
+    #coverWaitOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(11, 18, 32, 0.72);
+      backdrop-filter: blur(8px);
+      padding: 24px;
+    }
+    #coverWaitOverlay.open { display: flex; }
+    #coverWaitOverlay.success .cover-wait-bar { display: none; }
+    #coverWaitOverlay.success .cover-wait-timer { display: none; }
+    #coverWaitOverlay.success .cover-orbit .ring { display: none; }
+    #coverWaitOverlay.success .cover-orbit .core {
+      background: #16a34a;
+      box-shadow: 0 0 0 8px rgba(22, 163, 74, 0.25);
+      font-size: 42px;
+      line-height: 1;
+    }
+    #coverWaitOverlay.success .cover-wait-card::before {
+      background: radial-gradient(circle, rgba(22, 163, 74, 0.45), transparent 65%);
+      animation: none;
+    }
+    .publish-ok-badge {
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      margin-top: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(22, 163, 74, 0.15);
+      color: #4ade80;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid rgba(74, 222, 128, 0.35);
     }
-    button.primary, .button.primary { background: var(--text); border-color: var(--text); color: #ffffff; }
-    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .pill { border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 6px 12px; font-size: 12px; background: #ffffff; font-weight: 600; }
-    .ok { color: var(--ok); }
-    .warn { color: var(--warn); }
-    .bad { color: var(--bad); }
-    .kv { display: grid; gap: 8px; font-size: 13px; }
-    .kv div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 7px; }
-    .kv span { color: var(--muted); }
-    .path { overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
-    textarea {
-      width: 100%;
-      min-height: 180px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #ffffff;
-      color: var(--text);
+    .publish-ok-badge .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+    }
+    .cover-wait-card {
+      width: min(420px, 100%);
+      background: #0b1220;
+      color: #fff;
+      border-radius: 28px;
+      padding: 28px 24px 22px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .cover-wait-card::before {
+      content: "";
+      position: absolute;
+      inset: -40% -20% auto;
+      height: 180px;
+      background: radial-gradient(circle, rgba(0,102,255,0.45), transparent 65%);
+      animation: coverGlow 2.4s ease-in-out infinite;
+    }
+    @keyframes coverGlow {
+      0%, 100% { transform: translateY(0) scale(1); opacity: 0.7; }
+      50% { transform: translateY(12px) scale(1.08); opacity: 1; }
+    }
+    .cover-orbit {
+      width: 120px;
+      height: 120px;
+      margin: 8px auto 18px;
+      position: relative;
+    }
+    .cover-orbit .ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.12);
+      border-top-color: #60a5fa;
+      border-right-color: #0066FF;
+      animation: coverSpin 1.1s linear infinite;
+    }
+    .cover-orbit .ring.slow {
+      inset: 12px;
+      border-top-color: #93c5fd;
+      border-right-color: transparent;
+      animation-duration: 2.2s;
+      animation-direction: reverse;
+    }
+    .cover-orbit .core {
+      position: absolute;
+      inset: 28px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #1e3a8a, #0066FF);
+      display: grid;
+      place-items: center;
+      font-size: 28px;
+      box-shadow: 0 0 24px rgba(0,102,255,0.55);
+      animation: coverPulse 1.6s ease-in-out infinite;
+    }
+    @keyframes coverSpin { to { transform: rotate(360deg); } }
+    @keyframes coverPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.06); }
+    }
+    .cover-wait-card h3 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      letter-spacing: -0.03em;
+      position: relative;
+    }
+    .cover-wait-card p {
+      margin: 0;
+      color: #94a3b8;
+      font-size: 13px;
+      position: relative;
+    }
+    .cover-wait-timer {
+      margin-top: 14px;
+      font-family: var(--mono);
+      font-size: 28px;
+      font-weight: 600;
+      color: #60a5fa;
+      letter-spacing: 0.04em;
+      position: relative;
+    }
+    .cover-wait-bar {
+      margin-top: 18px;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      overflow: hidden;
+      position: relative;
+    }
+    .cover-wait-bar > span {
+      display: block;
+      height: 100%;
+      width: 8%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #38bdf8, #0066FF, #93c5fd);
+      background-size: 200% 100%;
+      animation: coverFillShine 1.4s linear infinite;
+      transition: width 0.45s ease;
+    }
+    @keyframes coverFillShine {
+      0% { background-position: 0% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .cover-wait-hint {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #64748b;
+      min-height: 36px;
+      position: relative;
+    }
+    .placeholder {
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-size: var(--fs-sm);
+      padding: 20px;
+      text-align: center;
+    }
+    .clip-body { padding: 16px; display: grid; gap: 10px; }
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       padding: 10px 12px;
-      resize: vertical;
+      border-radius: 12px;
+      background: var(--blue-soft);
+      border: 1px solid #bfdbfe;
+      color: var(--blue);
+      font-size: var(--fs-md);
+      font-weight: var(--fw-semibold);
+      cursor: pointer;
     }
-    .hidden { display: none; }
-    .brand { display: flex; align-items: center; gap: 12px; }
-    .brand-icon { width: 42px; height: 42px; border-radius: 12px; background: var(--text); color: #ffffff; display: grid; place-items: center; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18); }
-    @media (max-width: 880px) {
-      header { display: grid; }
-      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .platforms {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-medium);
+      color: var(--muted);
     }
+    .meta {
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .meta h3 {
+      margin: 0;
+      font-size: var(--fs-xs);
+      font-weight: var(--fw-semibold);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tabs button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 10px;
+      font-weight: var(--fw-semibold);
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .tabs button.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .meta pre {
+      margin: 2px 0 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--font);
+      font-size: var(--fs-sm);
+      font-weight: var(--fw-semibold);
+    }
+    .sticky {
+      position: sticky;
+      bottom: 18px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--ink);
+      color: #fff;
+      border-radius: 999px;
+      padding: 14px 22px;
+      box-shadow: 0 18px 40px rgba(11, 18, 32, 0.28);
+    }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
-  <main>
-    <header>
-      <div class="brand">
-        <div class="brand-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-          </svg>
-        </div>
-        <div>
-        <div class="row" style="margin-bottom: 12px">
-          <span class="pill">VideoShorts v0.3.8</span>
-          <span class="pill">latest-results.json</span>
-          <span class="pill">без base64 MP4</span>
-        </div>
-        <h1>VideoShorts: результаты</h1>
-        <p>Загрузите `videoshorts-memory/output/latest-results.json`, чтобы увидеть клипы, QA и publish bundle.</p>
-        </div>
-      </div>
-      <a class="button primary" href="./videoshorts-upload.html">Новая нарезка</a>
-    </header>
+  <div class="shell">
+    <div class="panel">
+      <header class="top">
+        <a class="brand" href="./videoshorts-upload.html" aria-label="Гиперион">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="./hyperion-mark.png?v=ref9" width="72" height="72" alt="">
+          </span>
+          <span class="brand-text">
+            <span class="brand-name">Гиперион</span>
+            <span class="brand-name-ru">Субагентская система монтажа</span>
+          </span>
+        </a>
+        <nav class="nav">
+          <a href="./videoshorts-upload.html">Нарезка</a>
+          <a class="active" href="./videoshorts-results.html">Результаты</a>
+          <a href="#publishDesk">Очередь</a>
+          <a href="./videoshorts-upload.html#subagents">Субагенты</a>
+          <a href="./videoshorts-upload.html#settings">Настройки</a>
+        </nav>
+        <a class="user-chip" href="https://t.me/maya_pro" target="_blank" rel="noopener noreferrer">
+          <img src="./user_promo_avatar.png?v=6" alt="Артур Хорошев">
+          <div>
+            <b>Артур Хорошев</b>
+            <span>t.me/maya_pro</span>
+          </div>
+        </a>
+      </header>
 
-    <div class="card">
-      <h2>Данные результатов</h2>
-      <div class="row">
-        <input id="jsonInput" class="hidden" type="file" accept="application/json,.json">
-        <button class="primary" id="pickJson">Открыть latest-results.json</button>
-        <button id="loadLatest" class="primary">Загрузить последние результаты</button>
-        <button id="loadStatus">Проверить статус запуска</button>
-        <button id="loadFromText">Обновить из поля JSON</button>
+      <div class="body">
+        <aside class="sidebar">
+          <div class="hello">
+            <h1>Готовые клипы</h1>
+            <p>Публикация и SEO-метаданные</p>
+          </div>
+          <div>
+            <div class="menu-label">МЕНЮ</div>
+            <div class="menu">
+              <a href="./videoshorts-upload.html"><span class="left"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg> Обзор / Нарезка</span></a>
+              <div class="item active"><span class="left"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 4v16M17 4v16M2 12h20M2 8h5M2 16h5M17 8h5M17 16h5"/></svg> Готовые клипы</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
+            </div>
+          </div>
+          <div class="promo">
+            <img class="promo-cutout" src="./user_promo_avatar.png?v=6" alt="Артур Хорошев">
+            <div class="promo-copy">
+              <div>
+                <div class="promo-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                </div>
+                <h3>Подпишись на Telegram</h3>
+                <p>Вайбкодинг, Cursor и ИИ-агенты</p>
+              </div>
+              <a class="promo-btn" href="https://t.me/maya_pro" target="_blank" rel="noopener noreferrer">t.me/maya_pro ↗</a>
+            </div>
+          </div>
+        </aside>
+
+        <main class="main">
+          <section id="summary" class="stats"></section>
+
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+              <div>
+                <h2 style="margin:0;font-size:18px;">Управление результатами</h2>
+                <p style="margin:4px 0 0;font-size:12px;color:var(--muted);">Путь: <code id="defaultJsonPath" style="font-family:var(--mono);color:var(--blue);">videoshorts-memory/output/latest-results.json</code></p>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <input id="jsonInput" class="hidden" type="file" accept="application/json,.json">
+                <button class="btn-blue" id="pickJson" type="button">Открыть JSON</button>
+                <button class="btn-dark" id="loadLatest" type="button">Обновить</button>
+                <button class="btn-dark" id="loadStatus" type="button">Статус</button>
+                <button class="btn-dark" id="loadFromText" type="button">Из поля</button>
+                <a class="btn-blue" href="./videoshorts-upload.html">+ Новая нарезка</a>
+              </div>
+            </div>
+            <textarea id="jsonText" class="hidden"></textarea>
+          </div>
+
+          <section id="publishDesk" style="display:none;"></section>
+          <section id="clips"></section>
+          <div id="selectBar" class="sticky" style="display:none;"></div>
+          <section id="runStatus"></section>
+        </main>
       </div>
-      <p style="margin-top: 10px">Путь по умолчанию: <code id="defaultJsonPath">videoshorts-memory/output/latest-results.json</code></p>
-      <textarea id="jsonText" placeholder="Можно вставить JSON сюда вручную"></textarea>
     </div>
+  </div>
 
-    <section id="summary"></section>
-    <section id="clips"></section>
-    <section id="runStatus"></section>
-  </main>
+  <div id="coverWaitOverlay" aria-live="polite" aria-busy="true">
+    <div class="cover-wait-card">
+      <div class="cover-orbit">
+        <div class="ring"></div>
+        <div class="ring slow"></div>
+        <div class="core">🎨</div>
+      </div>
+      <h3 id="coverWaitTitle">Рисую обложку</h3>
+      <p id="coverWaitSub">Только для выбранных клипов · Kie 9:16</p>
+      <div class="cover-wait-timer" id="coverWaitTimer">00:00</div>
+      <div class="cover-wait-bar"><span id="coverWaitFill"></span></div>
+      <div class="cover-wait-hint" id="coverWaitHint">Готовлю бренд-кит и hook…</div>
+    </div>
+  </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
-
     function esc(value) {
-      return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-      })[ch]);
+      return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
     }
-
-    function statusClass(value) {
-      return String(value || "").toUpperCase() === "PASS" || value === true ? "ok" : "bad";
-    }
-
+    let latestData = null;
+    let clipsDir = "";
+    let coverWaitTimerId = null;
+    let coverPollId = null;
+    let coverWaitStartedAt = 0;
+    const COVER_HINTS = [
+      "Kie смешивает ваш аватар со стилем референса…",
+      "Пишу короткий hook крупным шрифтом…",
+      "Кручу позу и одежду под тему клипа…",
+      "Собираю вертикальный кадр 9:16…",
+      "Ещё чуть-чуть — нейросеть дорисовывает…",
+    ];
     function isLocalBridge() {
       return location.origin.startsWith("http://127.0.0.1") || location.origin.startsWith("http://localhost");
     }
-
     function mediaUrl(clip) {
       const path = clip.publish_path || clip.path;
       if (!path) return "";
       return isLocalBridge() ? `/api/media?path=${encodeURIComponent(path)}` : "";
     }
-
-    function metadataBlock(meta) {
-      if (!meta) return `<div class="meta-box"><p>Метаданные ещё не созданы. Запустите Task <code>videoshorts-metadata-writer</code> перед packager.</p></div>`;
-      const tags = Array.isArray(meta.hashtags) ? meta.hashtags.join(" ") : "";
-      const copy = meta.copy_block || [meta.title, "", meta.description, "", tags].filter(Boolean).join("\n");
-      return `
-        <div class="meta-box">
-          <h3>Публикация</h3>
-          <div class="copy-field"><label>Title</label><pre>${esc(meta.title || "")}</pre></div>
-          <div class="copy-field"><label>Description</label><pre>${esc(meta.description || "")}</pre></div>
-          <div class="copy-field"><label>Hashtags</label><pre>${esc(tags)}</pre></div>
-          ${meta.pinned_comment ? `<div class="copy-field"><label>Закреп</label><pre>${esc(meta.pinned_comment)}</pre></div>` : ""}
-          <button data-copy="${esc(copy)}">Скопировать title + description + hashtags</button>
-        </div>
-      `;
+    function coverUrl(clip) {
+      const path = clip.cover_path;
+      if (!path || !isLocalBridge()) return "";
+      return `/api/media?path=${encodeURIComponent(path)}&t=${Date.now()}`;
     }
-
-    function scoreBlock(clip) {
-      const s = clip.scores || {};
-      if (!s || Object.keys(s).length === 0) return "";
-      return `
-        <div class="meta-box">
-          <h3>Оценка клипа</h3>
-          <div class="kv">
-            <div><span>Quality</span><b>${esc(s.quality_score ?? clip.score ?? "-")}</b></div>
-            <div><span>Hook</span><b>${esc(s.hook_score ?? "-")}</b></div>
-            <div><span>Virality</span><b>${esc(s.virality_score ?? "-")}</b></div>
-            <div><span>Pacing</span><b>${esc(s.pacing_score ?? "-")}</b></div>
-            <div><span>Completeness</span><b>${esc(s.completeness_score ?? "-")}</b></div>
-            <div><span>Reject reason</span><b class="${s.reject_reason ? "warn" : "ok"}">${esc(s.reject_reason || "нет")}</b></div>
-          </div>
-        </div>
-      `;
+    function formatWait(ms) {
+      const sec = Math.floor(ms / 1000);
+      const m = String(Math.floor(sec / 60)).padStart(2, "0");
+      const s = String(sec % 60).padStart(2, "0");
+      return `${m}:${s}`;
     }
-
-    function qaDetailBlock(clip) {
-      const audio = clip.audio || {};
-      const audioQa = clip.audio_qa || {};
-      const safe = clip.safe_zone || {};
-      const retry = clip.retry || {};
-      const cleanup = clip.cleanup || {};
-      const audioWarnings = audioQa.warnings || audio.issues || [];
-      const safeWarnings = safe.warnings || [];
-      return `
-        <div class="meta-box">
-          <h3>P0 QA</h3>
-          <div class="kv">
-            <div><span>Cleanup safe/review</span><b>${esc(cleanup.summary?.safe_plan_items ?? "-")} / ${esc(cleanup.summary?.review_only_items ?? "-")}</b></div>
-            <div><span>Audio</span><b class="${audioWarnings.length ? "warn" : "ok"}">${esc(audio.status || audioQa.status || "-")}</b></div>
-            <div><span>Mean volume</span><b>${esc(audio.volumedetect?.mean_volume_db ?? "-")} dB</b></div>
-            <div><span>Max volume</span><b>${esc(audio.volumedetect?.max_volume_db ?? "-")} dB</b></div>
-            <div><span>Safe-zone</span><b class="${safeWarnings.length ? "warn" : "ok"}">${esc(safe.status || "-")}</b></div>
-            <div><span>Retry</span><b class="${retry.reasons ? "warn" : "ok"}">${esc(retry.reasons ? retry.reasons.join(", ") : "не нужен")}</b></div>
-          </div>
-          ${audioWarnings.length ? `<p class="warn">Audio warnings: ${esc(audioWarnings.join(", "))}</p>` : ""}
-          ${safeWarnings.length ? `<p class="warn">Safe-zone warnings: ${esc(safeWarnings.join(", "))}</p>` : ""}
-        </div>
-      `;
+    function openCoverWait(total, opts = {}) {
+      const overlay = $("coverWaitOverlay");
+      if (!overlay) return;
+      overlay.classList.add("open");
+      overlay.classList.remove("success");
+      overlay.setAttribute("aria-busy", "true");
+      coverWaitStartedAt = Date.now();
+      const title = opts.title || (total === 1 ? "Рисую обложку" : `Рисую ${total} обложки`);
+      const sub = opts.sub || "Только выбранные клипы · Kie GPT Image 2 · 9:16";
+      $("coverWaitTitle").textContent = title;
+      $("coverWaitSub").textContent = sub;
+      $("coverWaitFill").style.width = "6%";
+      $("coverWaitHint").textContent = opts.hint || COVER_HINTS[0];
+      $("coverWaitTimer").textContent = "00:00";
+      const core = document.querySelector("#coverWaitOverlay .core");
+      if (core) {
+        if (!core.dataset.defaultCore) core.dataset.defaultCore = core.textContent || "🎨";
+        core.textContent = core.dataset.defaultCore;
+      }
+      let hintIdx = 0;
+      const hints = opts.hints || COVER_HINTS;
+      if (coverWaitTimerId) clearInterval(coverWaitTimerId);
+      coverWaitTimerId = setInterval(() => {
+        $("coverWaitTimer").textContent = formatWait(Date.now() - coverWaitStartedAt);
+        if ((Date.now() - coverWaitStartedAt) % 4000 < 1100) {
+          hintIdx = (hintIdx + 1) % hints.length;
+          $("coverWaitHint").textContent = hints[hintIdx];
+        }
+      }, 250);
+      if (coverPollId) clearInterval(coverPollId);
+      if (!opts.skipCoverPoll) coverPollId = setInterval(pollCoverProgress, 900);
     }
-
+    function closeCoverWait() {
+      const overlay = $("coverWaitOverlay");
+      if (overlay) {
+        overlay.classList.remove("open");
+        overlay.classList.remove("success");
+        overlay.setAttribute("aria-busy", "false");
+      }
+      if (coverWaitTimerId) clearInterval(coverWaitTimerId);
+      if (coverPollId) clearInterval(coverPollId);
+      coverWaitTimerId = null;
+      coverPollId = null;
+      const core = document.querySelector("#coverWaitOverlay .core");
+      if (core && core.dataset.defaultCore) core.textContent = core.dataset.defaultCore;
+    }
+    function showPublishSuccess(message, opts = {}) {
+      const overlay = $("coverWaitOverlay");
+      if (!overlay) return;
+      if (coverWaitTimerId) clearInterval(coverWaitTimerId);
+      if (coverPollId) clearInterval(coverPollId);
+      coverWaitTimerId = null;
+      coverPollId = null;
+      overlay.classList.add("open", "success");
+      overlay.setAttribute("aria-busy", "false");
+      const core = document.querySelector("#coverWaitOverlay .core");
+      if (core) {
+        if (!core.dataset.defaultCore) core.dataset.defaultCore = core.textContent || "🎨";
+        core.textContent = "✓";
+      }
+      $("coverWaitTitle").textContent = opts.title || "Опубликовано";
+      $("coverWaitSub").textContent = message || "Всё готово";
+      $("coverWaitFill").style.width = "100%";
+      $("coverWaitHint").textContent = opts.hint || "Можно закрыть это окно";
+      $("coverWaitTimer").textContent = "✓";
+      const holdMs = Number(opts.holdMs != null ? opts.holdMs : 2200);
+      setTimeout(() => closeCoverWait(), holdMs);
+    }
+    async function pollCoverProgress() {
+      if (!clipsDir || !isLocalBridge()) return;
+      try {
+        const response = await fetch(`/api/covers-progress?clips_dir=${encodeURIComponent(clipsDir)}`);
+        const data = await response.json();
+        if (!data || !data.ok) return;
+        const pct = Math.max(4, Math.min(98, Number(data.pct) || 0));
+        $("coverWaitFill").style.width = `${pct}%`;
+        if (data.message) $("coverWaitHint").textContent = data.message;
+        if (data.hook) {
+          $("coverWaitSub").textContent = `«${data.hook}» · ${data.current || 0}/${data.total || "?"}`;
+        } else if (data.current != null && data.total != null) {
+          $("coverWaitSub").textContent = `${data.current}/${data.total} · Kie 9:16`;
+        }
+        if (data.cover_path && data.phase === "done_clip") {
+          // soft preview bump — full reload after request completes
+        }
+      } catch (_) { /* ignore poll errors while generating */ }
+    }
+    function coverBlock(clip) {
+      const url = coverUrl(clip);
+      const idx = clip.index;
+      const published = !!(clip.zen_published || clip.dzen_published || clip.publish_zen_ok);
+      const zenBtn = clip.cover_ready
+        ? (published
+          ? `<div class="publish-ok-badge" data-zen-ok="${esc(idx)}"><span class="dot"></span>Опубликовано в Дзен</div>`
+          : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+            <button type="button" class="btn-blue" data-publish-zen="${esc(idx)}" style="font-size:12px;padding:8px 12px;">Опубликовать в Дзен</button>
+            <button type="button" class="btn-dark" data-publish-zen-draft="${esc(idx)}" style="font-size:12px;padding:8px 12px;">Черновик Дзен</button>
+          </div>`)
+        : "";
+      if (url) {
+        return `<div class="cover-panel">
+          <div class="cover-meta">Обложка готова · 9:16</div>
+          <img src="${esc(url)}" alt="cover clip ${esc(clip.index)}" loading="lazy">
+          <div style="font-size:12px;color:#cbd5e1;">${esc(clip.cover_text || clip.hook || "")}</div>
+          ${zenBtn}
+        </div>`;
+      }
+      return `<div class="cover-panel">
+        <div class="cover-meta">Обложка</div>
+        <div class="cover-empty">Выберите клип галочкой<br>и нажмите «Подготовить обложки»</div>
+      </div>`;
+    }
+    function platformPack(meta, platform) {
+      if (!meta) return null;
+      const packs = meta.platforms || {};
+      if (platform === "youtube") return packs.youtube || { title: meta.title, description: meta.description, hashtags: meta.hashtags, copy_block: meta.copy_block };
+      if (platform === "instagram") return packs.instagram || { title: meta.title, caption: meta.description, hashtags: meta.hashtags, copy_block: meta.copy_block };
+      if (platform === "tiktok") return packs.tiktok || { title: meta.title, description: meta.description, hashtags: meta.hashtags, copy_block: meta.copy_block };
+      if (platform === "telegram") return packs.telegram || { title: meta.title, caption: meta.description, hashtags: meta.hashtags, copy_block: meta.copy_block };
+      if (platform === "vk") return packs.vk || { title: meta.title, description: meta.description, hashtags: meta.hashtags, copy_block: meta.copy_block };
+      if (platform === "zen") return packs.zen || packs.youtube || { title: meta.title, description: meta.description, hashtags: meta.hashtags, copy_block: meta.copy_block };
+      return null;
+    }
+    function metadataBlock(meta, clipIndex) {
+      if (!meta) return `<div class="meta"><p style="margin:0;font-size:12px;color:var(--muted);">Метаданные ещё создаются…</p></div>`;
+      const tabs = ["youtube", "instagram", "tiktok", "telegram", "vk", "zen"];
+      const pack = platformPack(meta, "youtube") || {};
+      const tags = Array.isArray(pack.hashtags || meta.hashtags) ? (pack.hashtags || meta.hashtags).join(" ") : "";
+      const copy = pack.copy_block || [pack.title || meta.title, "", pack.description || meta.description, "", tags].filter(Boolean).join("\n");
+      return `
+        <div class="meta" data-meta-index="${clipIndex}">
+          <h3>SEO метаданные</h3>
+          <div class="tabs">${tabs.map((p, i) => `<button type="button" data-platform-tab="${p}" data-clip-index="${clipIndex}" class="${i === 0 ? "active" : ""}">${p === "zen" ? "ДЗЕН" : p.toUpperCase()}</button>`).join("")}</div>
+          <div><label style="font-size:10px;font-weight:var(--fw-semibold);color:var(--muted);">TITLE</label><pre data-field="title">${esc(pack.title || meta.title || "")}</pre></div>
+          <div><label style="font-size:10px;font-weight:var(--fw-semibold);color:var(--muted);">DESCRIPTION</label><pre data-field="description">${esc(pack.description || pack.caption || meta.description || "")}</pre></div>
+          <div><label style="font-size:10px;font-weight:var(--fw-semibold);color:var(--muted);">HASHTAGS</label><pre data-field="hashtags">${esc(tags)}</pre></div>
+          <button class="btn-dark" data-copy="${esc(copy)}" type="button" style="font-size:11px;">Скопировать текст</button>
+        </div>`;
+    }
     function decisionBlock(clip) {
       const d = clip.decision || {};
-      const cleanup = clip.cleanup || {};
-      const silence = d.silence_removed || cleanup.silence_removed || {};
-      const fillers = d.fillers_removed || cleanup.fillers_removed || {};
-      const source = d.decision_source || "-";
-      if (!d || Object.keys(d).length === 0) {
-        return `
-          <div class="meta-box">
-            <h3>Решение агента</h3>
-            <p class="warn">Нет <code>clip-decisions.json</code>. В Agent mode это incident: клипы выглядят алгоритмическими и требуют <code>videoshorts-fixic</code>.</p>
-          </div>
-        `;
-      }
-      return `
-        <div class="meta-box">
-          <h3>Решение агента</h3>
-          <div class="kv">
-            <div><span>Источник решения</span><b class="${d.agent_confirmation_required ? "warn" : "ok"}">${esc(source)}</b></div>
-            <div><span>Подтверждено агентом</span><b class="${d.selected_by_agent ? "ok" : "warn"}">${d.selected_by_agent ? "да" : "нет / draft"}</b></div>
-            <div><span>Confidence</span><b>${esc(d.confidence ?? "-")}</b></div>
-          </div>
-          <div class="evidence">
-            <div><b>Почему агент выбрал этот фрагмент:</b> ${esc(d.why_this_moment || "-")}</div>
-            <div><b>Вирусная гипотеза:</b> ${esc(d.viral_hypothesis || "-")}</div>
-            <div><b>Начало мысли:</b> ${esc(d.thought_start_evidence || clip.semantic_boundary_evidence?.why_start || "-")}</div>
-            <div><b>Конец мысли:</b> ${esc(d.thought_end_evidence || clip.semantic_boundary_evidence?.why_end || "-")}</div>
-            <div><b>Что удалено/склеено:</b> ${esc(cleanup.glue_or_transition_notes || d.glue_or_transition_notes || "-")}</div>
-            <div><b>Silence removed:</b> ${esc(silence.count ?? 0)} / ${esc(silence.seconds ?? 0)} сек</div>
-            <div><b>Fillers removed:</b> ${esc(fillers.count ?? 0)}</div>
-            <div><b>Reject if:</b> ${esc(Array.isArray(d.reject_if) ? d.reject_if.join("; ") : d.reject_if || "-")}</div>
-            ${d.agent_notes ? `<div><b>Заметка:</b> ${esc(d.agent_notes)}</div>` : ""}
-          </div>
-        </div>
-      `;
+      if (!d || Object.keys(d).length === 0) return "";
+      return `<div class="meta"><h3>Решение субагента</h3>
+        <div style="font-size:12px;display:grid;gap:4px;">
+          <div><b style="color:var(--muted);">Причина:</b> ${esc(d.why_this_moment || "-")}</div>
+          <div><b style="color:var(--muted);">Вирусность:</b> ${esc(d.viral_hypothesis || "-")}</div>
+          <div><b style="color:var(--muted);">Confidence:</b> ${esc(d.confidence ?? "-")}</div>
+        </div></div>`;
     }
-
-    function agentRoomBlock(clip) {
-      const candidate = clip.candidate || {};
-      const editor = clip.editor_review || {};
-      const virality = clip.virality_review || {};
-      const dramaturgy = clip.dramaturgy || {};
-      const montage = clip.montage_plan || {};
-      const post = clip.post_render_review || {};
-      return `
-        <div class="meta-box">
-          <h3>Редакционная комната агентов</h3>
-          <div class="evidence">
-            <div><b>Кандидат:</b> ${candidate.candidate_id ? `${esc(candidate.candidate_id)} — ${esc(candidate.candidate_reason || "-")}` : "нет candidate-moments.json"}</div>
-            <div><b>Hook type:</b> ${esc(candidate.hook_type || "-")} · <b>Боль ЦА:</b> ${esc(candidate.audience_pain || "-")}</div>
-            <div><b>Possible title:</b> ${esc(candidate.possible_title || "-")}</div>
-          </div>
-        </div>
-        <div class="meta-box">
-          <h3>Редактор</h3>
-          <div class="kv">
-            <div><span>Keep / reject</span><b class="${editor.reject ? "bad" : editor.keep ? "ok" : "warn"}">${editor.reject ? "reject" : editor.keep ? "keep" : "нет данных"}</b></div>
-            <div><span>Needs context</span><b>${esc(editor.needs_context ?? "-")}</b></div>
-            <div><span>Too slow</span><b>${esc(editor.too_slow ?? "-")}</b></div>
-            <div><span>No payoff</span><b>${esc(editor.no_payoff ?? "-")}</b></div>
-            <div><span>Duplicate theme</span><b>${esc(editor.duplicate_theme ?? "-")}</b></div>
-          </div>
-          <p>${esc(editor.editor_notes || "Нет editor-review.json")}</p>
-        </div>
-        <div class="meta-box">
-          <h3>Вирусолог</h3>
-          <div class="kv">
-            <div><span>Virality</span><b class="${virality.status === "REJECT" ? "bad" : virality.status === "PASS" ? "ok" : "warn"}">${esc(virality.virality_score ?? "-")}</b></div>
-            <div><span>Shareability</span><b>${esc(virality.shareability ?? "-")}</b></div>
-            <div><span>Comment trigger</span><b>${esc(virality.comment_trigger ?? "-")}</b></div>
-            <div><span>Curiosity gap</span><b>${esc(virality.curiosity_gap ?? "-")}</b></div>
-            <div><span>Save value</span><b>${esc(virality.save_value ?? "-")}</b></div>
-          </div>
-          <p>${esc(virality.critic_notes || virality.reject_reason || "Нет virality-review.json")}</p>
-        </div>
-        <div class="meta-box">
-          <h3>Драматургия</h3>
-          <div class="evidence">
-            <div><b>Setup:</b> ${esc(dramaturgy.setup || "-")}</div>
-            <div><b>Tension:</b> ${esc(dramaturgy.tension || "-")}</div>
-            <div><b>Insight/result:</b> ${esc(dramaturgy.insight_or_result || "-")}</div>
-            <div><b>Clean ending:</b> ${esc(dramaturgy.clean_ending || "-")}</div>
-            <div><b>Status:</b> <span class="${dramaturgy.status === "REJECT" ? "bad" : dramaturgy.status === "PASS" ? "ok" : "warn"}">${esc(dramaturgy.status || "нет данных")}</span></div>
-          </div>
-        </div>
-        <div class="meta-box">
-          <h3>Монтажное ТЗ</h3>
-          <div class="kv">
-            <div><span>Jump cuts</span><b>${esc(Array.isArray(montage.jump_cuts) ? montage.jump_cuts.length : "-")}</b></div>
-            <div><span>Silence remove</span><b>${esc(montage.silence_remove?.count ?? "-")}</b></div>
-            <div><span>Zoom punch</span><b>${esc(montage.zoom_punch ?? "-")}</b></div>
-            <div><span>Do not cut before/after</span><b>${esc(montage.do_not_cut_before ?? "-")} / ${esc(montage.do_not_cut_after ?? "-")}</b></div>
-          </div>
-          <p>${esc(montage.glue_notes || "Нет montage-plan.json")}</p>
-        </div>
-        <div class="meta-box">
-          <h3>Ревью после рендера</h3>
-          <div class="kv">
-            <div><span>Approve</span><b class="${post.approve ? "ok" : post.approve === false ? "bad" : "warn"}">${post.approve === true ? "да" : post.approve === false ? "нет" : "нет данных"}</b></div>
-            <div><span>Subtitle issue</span><b>${esc(post.subtitle_issue ?? "-")}</b></div>
-            <div><span>Hook failed</span><b>${esc(post.hook_failed ?? "-")}</b></div>
-            <div><span>Audio issue</span><b>${esc(post.audio_issue ?? "-")}</b></div>
-            <div><span>Boundary issue</span><b>${esc(post.boundary_issue ?? "-")}</b></div>
-          </div>
-          <p class="${post.rerender_reason ? "warn" : ""}">${esc(post.rerender_reason || post.reviewer_notes || "Нет post-render-review.json")}</p>
-        </div>
-      `;
-    }
-
     function render(data) {
+      latestData = data;
+      clipsDir = data.clips_dir || "";
       const totals = data.totals || {};
       const clips = Array.isArray(data.clips) ? data.clips : [];
       $("summary").innerHTML = `
-        <div class="grid">
-          <div class="stat"><b class="${statusClass(data.status)}">${esc(data.status || "UNKNOWN")}</b><span>статус</span></div>
-          <div class="stat"><b>${esc(totals.clips ?? clips.length)}</b><span>клипов</span></div>
-          <div class="stat"><b>${esc(totals.qa_passed ?? 0)}/${esc(totals.qa_total ?? 0)}</b><span>QA</span></div>
-          <div class="stat"><b>${esc(totals.score_passed ?? "-")}</b><span>score pass</span></div>
-          <div class="stat"><b>${esc(totals.candidates ?? "-")}</b><span>кандидатов</span></div>
-          <div class="stat"><b>${esc(totals.editor_keep ?? "-")}/${esc(totals.editor_reject ?? "-")}</b><span>editor keep/reject</span></div>
-          <div class="stat"><b>${esc(totals.virality_passed ?? "-")}/${esc(totals.virality_rejected ?? "-")}</b><span>virality pass/reject</span></div>
-          <div class="stat"><b>${esc(totals.post_render_approved ?? "-")}/${esc(totals.post_render_rejected ?? "-")}</b><span>post-render</span></div>
-          <div class="stat"><b>${esc(totals.cleanup_safe_items ?? "-")}</b><span>cleanup candidates</span></div>
-          <div class="stat"><b>${esc(totals.agent_confirmed ?? 0)}/${esc(totals.agent_decisions ?? 0)}</b><span>agent decisions</span></div>
-          <div class="stat"><b>${esc(totals.cleanup_applied_clips ?? "-")}</b><span>cleanup applied</span></div>
-          <div class="stat"><b>${esc(totals.audio_warn ?? "-")}</b><span>audio warnings</span></div>
-          <div class="stat"><b>${esc(totals.retry_failed_clips ?? 0)}</b><span>retry clips</span></div>
-          <div class="stat"><b>${esc(totals.packaged ?? 0)}</b><span>в publish bundle</span></div>
-          <div class="stat"><b>${esc(totals.broll_planned ?? 0)}</b><span>B-roll вставок</span></div>
-        </div>
-        <div class="card">
-          <h2>Пути</h2>
-          <div class="kv">
-            <div><span>Клипы</span><b class="path">${esc(data.clips_dir || "-")}</b></div>
-            <div><span>Publish</span><b class="path">${esc(data.publish_dir || "-")}</b></div>
-            <div><span>Manifest</span><b class="path">${esc(data.manifest_path || "-")}</b></div>
-            <div><span>QA report</span><b class="path">${esc(data.qa_report_path || "-")}</b></div>
-            <div><span>Cleanup plan</span><b class="path">${esc(data.cleanup_plan_path || "-")}</b></div>
-            <div><span>Candidate moments</span><b class="path">${esc(data.candidate_moments_path || "-")}</b></div>
-            <div><span>Scores</span><b class="path">${esc(data.scores_path || "-")}</b></div>
-            <div><span>Editor review</span><b class="path">${esc(data.editor_review_path || "-")}</b></div>
-            <div><span>Virality review</span><b class="path">${esc(data.virality_review_path || "-")}</b></div>
-            <div><span>Dramaturgy report</span><b class="path">${esc(data.dramaturgy_report_path || "-")}</b></div>
-            <div><span>Montage plan</span><b class="path">${esc(data.montage_plan_path || "-")}</b></div>
-            <div><span>Clip decisions</span><b class="path">${esc(data.clip_decisions_path || "-")}</b></div>
-            <div><span>Post-render review</span><b class="path">${esc(data.post_render_review_path || "-")}</b></div>
-            <div><span>B-roll plan</span><b class="path">${esc(data.broll_plan_path || "-")}</b></div>
-            <div><span>Audio metrics</span><b class="path">${esc(data.audio_metrics_path || "-")}</b></div>
-            <div><span>Retry plan</span><b class="path">${esc(data.retry_plan_path || "-")}</b></div>
+        <div class="stat"><b>${esc(data.status || "READY")}</b><span>Статус</span></div>
+        <div class="stat"><b>${esc(totals.clips ?? clips.length)}</b><span>Клипов</span></div>
+        <div class="stat"><b>${esc(totals.qa_passed ?? 0)}/${esc(totals.qa_total ?? 0)}</b><span>QA Passed</span></div>
+        <div class="stat"><b id="topSelectedCount">${esc(data.publish_desk?.selected_count ?? 0)}</b><span>Выбрано</span></div>`;
+      $("publishDesk").style.display = clips.length ? "block" : "none";
+      $("publishDesk").innerHTML = `
+        <div class="card-dark">
+          <div>
+            <h2>Панель публикации</h2>
+            <p>Галочка → обложки (только выбранные) → Дзен через Playwright. Первый вход: «Войти в Дзен».</p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn-dark" id="selectAllClips" style="background:#1e293b;">Выбрать все</button>
+            <button type="button" class="btn-dark" id="clearAllClips" style="background:#1e293b;">Снять</button>
+            <button type="button" class="btn-blue" id="preparePublish">Подготовить обложки</button>
+            <button type="button" class="btn-dark" id="dzenLoginBtn" style="background:#0f766e;">Войти в Дзен (cookies)</button>
           </div>
         </div>
-      `;
-
+        <div id="publishStatus" style="margin-top:10px;font-size:13px;font-weight:var(--fw-semibold);"></div>
+        <div id="dzenStatusLine" style="margin-top:6px;font-size:12px;color:#94a3b8;"></div>`;
       $("clips").innerHTML = `
-        <h2>Клипы</h2>
-        <div class="clip-grid">
-          ${clips.map((clip) => `
-            <article class="card clip-card">
-              <div class="video-shell">
-                ${mediaUrl(clip)
-                  ? `<video class="clip-video" src="${esc(mediaUrl(clip))}" controls preload="metadata"></video>`
-                  : `<div class="clip-video" style="display:grid;place-items:center;color:#fff;padding:24px;text-align:center">Откройте страницу через <code>http://127.0.0.1:8765/results</code>, чтобы смотреть видео прямо здесь.</div>`}
+        <h2 style="margin:4px 0 12px;font-size:20px;">Готовые ролики (${clips.length})</h2>
+        <div class="clips">${clips.map((clip) => {
+          const idx = clip.index ?? String(clip.file || "").replace(/\D/g, "");
+          const checked = clip.selected_for_publish ? "checked" : "";
+          return `<article class="clip" data-clip-card="${esc(idx)}">
+            <div class="video-shell">${mediaUrl(clip)
+              ? `<video src="${esc(mediaUrl(clip))}" controls preload="metadata"></video>`
+              : `<div class="placeholder">Откройте через http://127.0.0.1:8765/results</div>`}
+            </div>
+            <div class="clip-body">
+              <label class="check-row">
+                <input type="checkbox" class="publish-check" data-index="${esc(idx)}" data-title="${esc(clip.metadata?.title || "")}" data-file="${esc(clip.file || "")}" ${checked}>
+                <span>Публиковать этот клип</span>
+              </label>
+              <div class="platforms" data-platforms-for="${esc(idx)}">
+                <label><input type="checkbox" value="youtube" checked> YouTube</label>
+                <label><input type="checkbox" value="instagram" checked> Instagram</label>
+                <label><input type="checkbox" value="tiktok" checked> TikTok</label>
+                <label><input type="checkbox" value="telegram"> Telegram</label>
+                <label><input type="checkbox" value="vk"> VK</label>
+                <label><input type="checkbox" value="zen" checked> Дзен</label>
               </div>
-              <div class="clip-card-body">
-                <div class="row">
-                  <h2 style="margin-right:auto">${esc(clip.metadata?.title || clip.file || `clip_${clip.index}`)}</h2>
-                  <span class="pill">${esc(Number(clip.duration || 0).toFixed ? Number(clip.duration || 0).toFixed(1) : clip.duration)} сек</span>
-                </div>
-                <div class="kv">
-                  <div><span>QA</span><b class="${statusClass(clip.qa_ok)}">${clip.qa_ok ? "PASS" : "CHECK"}</b></div>
-                  <div><span>Разрешение</span><b>${esc(Array.isArray(clip.resolution) ? clip.resolution.join("x") : "-")}</b></div>
-                  <div><span>Субтитры</span><b>${clip.subtitles && (clip.subtitles.ass || clip.subtitles.srt) ? "есть" : "нет"}</b></div>
-                  <div><span>Burn</span><b>${clip.burned ? "да" : "нет"}</b></div>
-                  <div><span>B-roll</span><b>${clip.broll ? `${esc(clip.broll.visual_type || "есть")} · ${esc(clip.broll.duration_sec || "-")}с` : "нет"}</b></div>
-                  <div><span>Start → End</span><b>${esc(clip.start ?? "-")} → ${esc(clip.end ?? "-")}</b></div>
-                </div>
-                ${scoreBlock(clip)}
-                ${agentRoomBlock(clip)}
-                ${decisionBlock(clip)}
-                ${qaDetailBlock(clip)}
-                ${metadataBlock(clip.metadata)}
-                <div class="evidence">
-                  <div><b>Почему старт:</b> ${esc(clip.semantic_boundary_evidence?.why_start || "-")}</div>
-                  <div><b>Почему конец:</b> ${esc(clip.semantic_boundary_evidence?.why_end || "-")}</div>
-                  <div><b>Hook:</b> ${esc(clip.hook || clip.semantic_boundary_evidence?.hook || "-")}</div>
-                  <div><b>Payoff:</b> ${esc(clip.payoff_ending || clip.semantic_boundary_evidence?.payoff_ending || "-")}</div>
-                </div>
-                <div class="row">
-                  ${clip.path ? `<a class="button" href="${esc(mediaUrl(clip) || clip.path)}" target="_blank" rel="noopener noreferrer">Открыть MP4</a>` : ""}
-                  ${clip.publish_path ? `<span class="pill">publish ready</span>` : ""}
-                </div>
-                <p class="path">${esc(clip.publish_path || clip.path || "")}</p>
+              ${coverBlock(clip)}
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+                <h3 style="margin:0;font-size:15px;">${esc(clip.metadata?.title || clip.file || `clip_${idx}`)}</h3>
+                <span style="color:var(--blue);font-size:12px;font-weight:var(--fw-semibold);">${esc(Number(clip.duration || 0).toFixed ? Number(clip.duration || 0).toFixed(1) : clip.duration)} сек</span>
               </div>
-            </article>
-          `).join("")}
-        </div>
-      `;
+              ${decisionBlock(clip)}
+              ${metadataBlock(clip.metadata, idx)}
+            </div>
+          </article>`;
+        }).join("")}</div>`;
+      $("selectBar").style.display = clips.length ? "flex" : "none";
+      $("selectBar").innerHTML = `<div><b id="selectedCount" style="color:#60a5fa;font-size:20px;">0</b> клипов выбрано</div>
+        <button type="button" class="btn-blue" id="preparePublishBar">Подготовить обложки</button>`;
+      wirePublishUi();
+      refreshDzenStatus();
     }
-
-    function parseText() {
+    function collectSelection() {
+      const selected = [];
+      document.querySelectorAll(".publish-check:checked").forEach((input) => {
+        const index = Number(input.getAttribute("data-index"));
+        const box = document.querySelector(`[data-platforms-for="${index}"]`);
+        const platforms = box ? Array.from(box.querySelectorAll("input:checked")).map((el) => el.value) : ["youtube", "instagram", "tiktok"];
+        selected.push({ index, selected: true, platforms, title: input.getAttribute("data-title") || "", clip_file: input.getAttribute("data-file") || "" });
+      });
+      return selected;
+    }
+    function updateSelectedCount() {
+      const n = document.querySelectorAll(".publish-check:checked").length;
+      const el = $("selectedCount");
+      const top = $("topSelectedCount");
+      if (el) el.textContent = String(n);
+      if (top) top.textContent = String(n);
+    }
+    async function preparePublishFlow() {
+      const statusEl = $("publishStatus");
+      if (!isLocalBridge() || !clipsDir) return;
+      const selected = collectSelection();
+      if (!selected.length) {
+        if (statusEl) statusEl.textContent = "Выберите хотя бы один клип — обложка только для галочек.";
+        return;
+      }
+      if (statusEl) statusEl.textContent = `Генерирую ${selected.length} обложк(и)…`;
+      openCoverWait(selected.length);
       try {
-        const data = JSON.parse($("jsonText").value);
-        render(data);
+        const response = await fetch("/api/prepare-publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clips_dir: clipsDir, selected }),
+        });
+        const data = await response.json();
+        $("coverWaitFill").style.width = "100%";
+        if (!data.ok) {
+          closeCoverWait();
+          if (statusEl) statusEl.textContent = `Ошибка: ${data.error || "prepare failed"}`;
+          return;
+        }
+        $("coverWaitHint").textContent = "Готово — обновляю Results…";
+        await loadLatestResults();
+        closeCoverWait();
+        if (statusEl) {
+          statusEl.innerHTML = `Обложки готовы: <b>${esc(data.covers_ready ?? data.ready_count)}</b> · очередь <b>${esc(data.status)}</b>`;
+        }
+        // scroll to first selected with cover
+        const first = selected[0]?.index;
+        const card = first != null ? document.querySelector(`[data-clip-card="${first}"]`) : null;
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
       } catch (error) {
-        $("summary").innerHTML = `<div class="card"><p class="bad">JSON не прочитан: ${esc(error.message)}</p></div>`;
-        $("clips").innerHTML = "";
+        closeCoverWait();
+        if (statusEl) statusEl.textContent = `Ошибка: ${error.message}`;
       }
     }
-
+    function wirePublishUi() {
+      updateSelectedCount();
+      document.querySelectorAll(".publish-check").forEach((el) => el.addEventListener("change", updateSelectedCount));
+      const selectAll = $("selectAllClips");
+      const clearAll = $("clearAllClips");
+      if (selectAll) selectAll.onclick = () => { document.querySelectorAll(".publish-check").forEach((el) => { el.checked = true; }); updateSelectedCount(); };
+      if (clearAll) clearAll.onclick = () => { document.querySelectorAll(".publish-check").forEach((el) => { el.checked = false; }); updateSelectedCount(); };
+      const prep = $("preparePublish");
+      const prepBar = $("preparePublishBar");
+      if (prep) prep.onclick = preparePublishFlow;
+      if (prepBar) prepBar.onclick = preparePublishFlow;
+      const dzenLogin = $("dzenLoginBtn");
+      if (dzenLogin) dzenLogin.onclick = dzenLoginFlow;
+      document.querySelectorAll("[data-publish-zen]").forEach((btn) => {
+        btn.onclick = () => publishDzenFlow(Number(btn.getAttribute("data-publish-zen")), false);
+      });
+      document.querySelectorAll("[data-publish-zen-draft]").forEach((btn) => {
+        btn.onclick = () => publishDzenFlow(Number(btn.getAttribute("data-publish-zen-draft")), true);
+      });
+    }
+    async function refreshDzenStatus() {
+      const line = $("dzenStatusLine");
+      if (!line || !isLocalBridge()) return;
+      try {
+        const q = clipsDir ? `?clips_dir=${encodeURIComponent(clipsDir)}` : "";
+        const response = await fetch(`/api/dzen-status${q}`);
+        const data = await response.json();
+        if (!data.ok && data.error) {
+          line.textContent = `Дзен: ${data.error}`;
+          return;
+        }
+        const cookies = data.has_cookies ? "cookies OK" : "нет cookies — нажмите «Войти в Дзен»";
+        const client = data.client_ok
+          ? (data.bundled ? "dzen_client в плагине" : "client OK")
+          : "dzen_client не найден";
+        const channel = data.channel ? `канал ${data.channel}` : "канал не задан";
+        line.textContent = `Дзен · ${channel} · ${cookies} · ${client}`;
+        if (data.channel_url) line.innerHTML += ` · <a href="${esc(data.channel_url)}" target="_blank" rel="noopener noreferrer" style="color:#60a5fa;">открыть</a>`;
+      } catch (e) {
+        line.textContent = `Дзен status: ${e.message}`;
+      }
+    }
+    const DZEN_HINTS = [
+      "Открываю Playwright Chromium…",
+      "Проверяю cookies Яндекс/Дзен…",
+      "Загружаю видео и обложку в студию…",
+      "Пишу title + описание (до 200 символов)…",
+      "Ставлю до 5 тегов по одному чипу…",
+      "Жму «Опубликовать» и жду 10 секунд…",
+    ];
+    async function dzenLoginFlow() {
+      const statusEl = $("publishStatus");
+      if (!isLocalBridge()) return;
+      if (statusEl) statusEl.textContent = "Открываю браузер для входа в Дзен…";
+      openCoverWait(1, {
+        title: "Вход в Дзен",
+        sub: "Playwright headed · сохраняю cookies",
+        hint: DZEN_HINTS[1],
+        hints: DZEN_HINTS,
+        skipCoverPoll: true,
+      });
+      try {
+        const response = await fetch("/api/dzen-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clips_dir: clipsDir || null }),
+        });
+        const data = await response.json();
+        if (data.ok) {
+          showPublishSuccess("Cookies сохранены", { title: "Вход в Дзен готов", hint: "Можно публиковать клипы", holdMs: 1800 });
+        } else {
+          closeCoverWait();
+        }
+        if (statusEl) {
+          statusEl.textContent = data.ok
+            ? "Дзен: вход успешен, cookies сохранены."
+            : `Дзен login ошибка: ${data.error || "failed"}`;
+        }
+        await refreshDzenStatus();
+      } catch (error) {
+        closeCoverWait();
+        if (statusEl) statusEl.textContent = `Дзен login: ${error.message}`;
+      }
+    }
+    async function publishDzenFlow(index, draft) {
+      const statusEl = $("publishStatus");
+      if (!isLocalBridge() || !clipsDir) return;
+      if (!index) {
+        if (statusEl) statusEl.textContent = "Нет индекса клипа.";
+        return;
+      }
+      openCoverWait(1, {
+        title: draft ? "Черновик в Дзен" : "Публикую в Дзен",
+        sub: `clip_${String(index).padStart(2, "0")} · title · описание · до 5 тегов`,
+        hint: DZEN_HINTS[0],
+        hints: DZEN_HINTS,
+        skipCoverPoll: true,
+      });
+      if (statusEl) statusEl.textContent = draft ? `Черновик clip_${index}…` : `Публикация clip_${index} в Дзен…`;
+      try {
+        const response = await fetch("/api/publish-dzen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clips_dir: clipsDir, index, draft: !!draft }),
+        });
+        const data = await response.json();
+        const clipLabel = `clip_${String(index).padStart(2, "0")}`;
+        // Сразу гасим таймер-шкалу (даже если дальше что-то упадёт в render)
+        if (data.ok) {
+          showPublishSuccess(
+            draft ? `${clipLabel} сохранён как черновик` : `${clipLabel} опубликован в Дзен`,
+            {
+              title: draft ? "Черновик готов" : "Всё опубликовано",
+              hint: "✓ Браузер закрыт · можно работать дальше",
+              holdMs: 2200,
+            }
+          );
+          if (statusEl) {
+            statusEl.innerHTML = draft
+              ? `Дзен: <b>черновик</b> · ${clipLabel}`
+              : `<span class="publish-ok-badge"><span class="dot"></span>Опубликовано в Дзен · ${clipLabel}</span>`;
+          }
+          if (!draft && latestData && Array.isArray(latestData.clips)) {
+            const clip = latestData.clips.find((c) => Number(c.index) === Number(index));
+            if (clip) {
+              clip.zen_published = true;
+              clip.dzen_published = true;
+              clip.publish_zen_ok = true;
+            }
+            try { render(latestData); } catch (_) { /* ignore */ }
+          }
+        } else {
+          closeCoverWait();
+          if (statusEl) statusEl.innerHTML = `Дзен ошибка: ${esc(data.error || "failed")}`;
+        }
+        try {
+          await loadLatestResults();
+          await refreshDzenStatus();
+        } catch (_) { /* ignore */ }
+        // На случай если loadLatestResults перерисовал DOM и оверлей «залип»
+        if (data.ok) {
+          setTimeout(() => closeCoverWait(), 2400);
+        } else {
+          closeCoverWait();
+        }
+      } catch (error) {
+        closeCoverWait();
+        if (statusEl) statusEl.textContent = `Дзен: ${error.message}`;
+      }
+    }
+    function parseText() {
+      try { render(JSON.parse($("jsonText").value)); } catch (e) { console.warn(e); }
+    }
     $("pickJson").addEventListener("click", () => $("jsonInput").click());
     $("jsonInput").addEventListener("change", async (event) => {
       const file = event.target.files && event.target.files[0];
@@ -461,63 +1266,53 @@
     $("loadLatest").addEventListener("click", loadLatestResults);
     $("loadStatus").addEventListener("click", loadStatus);
     document.addEventListener("click", async (event) => {
+      const tab = event.target.closest("[data-platform-tab]");
+      if (tab) {
+        const platform = tab.getAttribute("data-platform-tab");
+        const clipIndex = tab.getAttribute("data-clip-index");
+        const clip = (latestData?.clips || []).find((c) => String(c.index) === String(clipIndex) || String(c.file || "").includes(`clip_${String(clipIndex).padStart(2, "0")}`));
+        const meta = clip?.metadata;
+        const pack = platformPack(meta, platform) || {};
+        const box = document.querySelector(`[data-meta-index="${clipIndex}"]`);
+        if (box) {
+          box.querySelectorAll("[data-platform-tab]").forEach((b) => b.classList.toggle("active", b === tab));
+          const titleEl = box.querySelector('[data-field="title"]');
+          const descEl = box.querySelector('[data-field="description"]');
+          const tagsEl = box.querySelector('[data-field="hashtags"]');
+          if (titleEl) titleEl.textContent = pack.title || pack.caption || meta?.title || "";
+          if (descEl) descEl.textContent = pack.description || pack.caption || meta?.description || "";
+          if (tagsEl) tagsEl.textContent = Array.isArray(pack.hashtags) ? pack.hashtags.join(" ") : (meta?.hashtags || []).join(" ");
+          const copyBtn = box.querySelector("[data-copy]");
+          if (copyBtn) copyBtn.setAttribute("data-copy", pack.copy_block || [pack.title, "", pack.description || pack.caption, "", (pack.hashtags || []).join(" ")].filter(Boolean).join("\n"));
+        }
+        return;
+      }
       const button = event.target.closest("[data-copy]");
       if (!button) return;
       await navigator.clipboard.writeText(button.getAttribute("data-copy") || "");
-      button.textContent = "Скопировано";
-      setTimeout(() => { button.textContent = "Скопировать title + description + hashtags"; }, 1200);
+      button.textContent = "Скопировано!";
+      setTimeout(() => { button.textContent = "Скопировать текст"; }, 1200);
     });
-
     async function loadLatestResults() {
-      if (!location.origin.startsWith("http://127.0.0.1") && !location.origin.startsWith("http://localhost")) {
-        $("summary").innerHTML = `<div class="card"><p class="bad">Автозагрузка доступна через .\\open-videoshorts-ui.ps1. Выберите JSON вручную.</p></div>`;
-        return;
-      }
+      if (!isLocalBridge()) return;
       try {
         const response = await fetch("/api/latest-results");
         const payload = await response.json();
-        if (!response.ok || !payload.ok) {
-          throw new Error(payload.error || `HTTP ${response.status}`);
+        if (response.ok && payload.ok) {
+          if (payload.path) $("defaultJsonPath").textContent = payload.path;
+          $("jsonText").value = JSON.stringify(payload.data, null, 2);
+          render(payload.data);
         }
-        if (payload.path) {
-          $("defaultJsonPath").textContent = payload.path;
-        }
-        $("jsonText").value = JSON.stringify(payload.data, null, 2);
-        render(payload.data);
-      } catch (error) {
-        $("summary").innerHTML = `<div class="card"><p class="bad">Не удалось загрузить latest-results.json: ${esc(error.message)}</p></div>`;
-        $("clips").innerHTML = "";
-      }
+      } catch (e) { console.warn(e); }
     }
-
     async function loadStatus() {
-      if (!location.origin.startsWith("http://127.0.0.1") && !location.origin.startsWith("http://localhost")) {
-        $("runStatus").innerHTML = `<div class="card"><p class="bad">Статус доступен при открытии через .\\open-videoshorts-ui.ps1.</p></div>`;
-        return;
-      }
+      if (!isLocalBridge()) return;
       try {
         const response = await fetch("/api/status");
         const data = await response.json();
-        $("runStatus").innerHTML = `
-          <div class="card">
-            <h2>Фоновый запуск</h2>
-            <div class="kv">
-              <div><span>Статус</span><b class="${statusClass(data.status)}">${esc(data.status || "IDLE")}</b></div>
-              <div><span>Режим</span><b>${esc(data.run_mode || "-")}</b></div>
-              <div><span>PID</span><b>${esc(data.pid || "-")}</b></div>
-              <div><span>Видео</span><b class="path">${esc(data.video_path || "-")}</b></div>
-              <div><span>Лог</span><b class="path">${esc(data.log_path || "-")}</b></div>
-              <div><span>Latest</span><b class="path">${esc(data.latest_results_path || "-")}</b></div>
-              ${data.latest_results_totals ? `<div><span>Клипов в JSON</span><b>${esc(data.latest_results_totals.clips ?? "-")}</b></div>` : ""}
-            </div>
-            ${data.message ? `<p style="margin-top:10px">${esc(data.message)}</p>` : ""}
-          </div>
-        `;
-      } catch (error) {
-        $("runStatus").innerHTML = `<div class="card"><p class="bad">Не удалось прочитать статус: ${esc(error.message)}</p></div>`;
-      }
+        if (data.status) console.log("Status:", data);
+      } catch (e) { console.warn(e); }
     }
-
     loadStatus();
     loadLatestResults();
   </script>

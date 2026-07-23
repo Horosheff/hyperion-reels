@@ -19,10 +19,11 @@ python burn_subtitles.py ../videoshorts-memory/output/clips/<stem>/ `
 
 Фильтрует cropped по keep из `subtitles-manifest.json` / `manifest.json` / `--moments` — не глобит stale `clip_08+` после уменьшения keep.
 
-Опциональные эффекты:
+Опциональные эффекты (из brief / `settings`):
 
-- `--progress-bar --progress-position bottom` — progress bar в том же pass
-- `--zoom-punch` — один punch-in по первому trigger word (`!`, «важно», «шок», `wow` и т.п.)
+- `progressBar: true` → `--progress-bar --progress-position bottom`
+- `zoomPunch: true` → `--zoom-punch`
+- `quality_preset: draft|release` → `--quality-preset …`
 
 Quality presets: `release` (1080p) / `draft` (720p).
 
