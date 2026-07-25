@@ -19,11 +19,14 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BRAND_DIR = PLUGIN_ROOT / "videoshorts-memory" / "brand" / "covers"
 STYLE_NOTES = (
     "High-energy vertical Shorts/Reels thumbnail 9:16. "
-    "Bold hook text readable on mobile. Dark dramatic background. "
-    "Floating UI accents, arrows, icons allowed. "
+    "Bold hook text readable on mobile. "
+    "Bright clean WHITE / off-white studio background (не тёмный фон). "
+    "Soft light, high-key, premium Fingoals/SaaS look: white, blue accents, black text. "
+    "Floating UI accents, arrows, icons allowed in blue/black only. "
     "Keep face identity from avatar: round black glasses, ash-blonde textured hair, short beard. "
     "Clothes, pose, expression MAY change to match the hook. "
     "Do NOT copy unrelated product logos from style refs unless they fit the topic. "
+    "Do NOT use dark/black dramatic backgrounds. "
     "Text language: Russian for the hook."
 )
 
@@ -129,34 +132,44 @@ def build_cover_prompt(*, hook: str, title: str, style_name: str, index: int) ->
         f"Subject: same man as avatar reference, {outfit}, pose: {pose}.\n"
         f"Main hook text on cover (exact, bold, short): «{hook}».\n"
         f"Optional small supporting line: «{title[:48]}».\n"
-        "Composition: person in lower-middle, huge hook in upper third, high contrast, "
-        "no watermark, no platform UI chrome."
+        "Composition: person in lower-middle on bright white background, huge dark/blue hook in upper third, "
+        "high contrast, no watermark, no platform UI chrome, no dark backdrop."
     )
 
 
-def ensure_cdn_urls(client: KieClient, brand_dir: Path, avatar: Path | None, refs: list[Path]) -> dict:
-    """Prefer remote brand-urls.json (HTTPS). Fallback: upload local avatar/refs to Kie CDN."""
+def _brand_urls_from_remote(brand_dir: Path) -> dict | None:
     remote = _read_json(brand_dir / "brand-urls.json")
     avatar_url = remote.get("avatar_url") if isinstance(remote.get("avatar_url"), str) else None
     remote_refs = remote.get("refs") if isinstance(remote.get("refs"), list) else []
-    if avatar_url and avatar_url.startswith("http") and remote_refs:
-        refs_out = []
-        for item in remote_refs:
-            if not isinstance(item, dict):
-                continue
-            url = item.get("url")
-            if isinstance(url, str) and url.startswith("http"):
-                refs_out.append({"name": str(item.get("name") or "ref"), "url": url})
-        if refs_out:
-            print(f"   brand-urls.json → avatar + {len(refs_out)} refs (HTTPS, no upload)")
-            return {"avatar_url": avatar_url, "refs": refs_out, "source": "brand-urls.json"}
+    if not (avatar_url and avatar_url.startswith("http") and remote_refs):
+        return None
+    refs_out = []
+    for item in remote_refs:
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url")
+        if isinstance(url, str) and url.startswith("http"):
+            refs_out.append({"name": str(item.get("name") or "ref"), "url": url})
+    if not refs_out:
+        return None
+    return {"avatar_url": avatar_url, "refs": refs_out, "source": "brand-urls.json"}
 
-    if avatar is None:
-        raise KieApiError("Нет avatar.png и нет brand-urls.json с avatar_url")
 
+def _upload_brand_to_kie_cdn(
+    client: KieClient,
+    brand_dir: Path,
+    avatar: Path,
+    refs: list[Path],
+    *,
+    force: bool = False,
+) -> dict:
+    """Upload local avatar/refs via Kie File Upload API (servers can always fetch their CDN)."""
     cache_path = brand_dir / "cdn-cache.json"
-    cache = _read_json(cache_path)
-    files = cache.setdefault("files", {})
+    cache = _read_json(cache_path) if not force else {"files": {}}
+    files = cache.setdefault("files", {}) if isinstance(cache.get("files"), dict) else {}
+    if force:
+        files = {}
+        cache["files"] = files
     changed = False
 
     def cached_url(path: Path) -> str:
@@ -166,7 +179,8 @@ def ensure_cdn_urls(client: KieClient, brand_dir: Path, avatar: Path | None, ref
         mtime = path.stat().st_mtime
         size = path.stat().st_size
         if (
-            entry.get("url")
+            not force
+            and entry.get("url")
             and entry.get("mtime") == mtime
             and entry.get("size") == size
             and str(entry.get("url")).startswith("http")
@@ -179,12 +193,40 @@ def ensure_cdn_urls(client: KieClient, brand_dir: Path, avatar: Path | None, ref
         return url
 
     avatar_url = cached_url(avatar)
-    ref_urls = [{"name": r.name, "url": cached_url(r)} for r in refs]
-    if changed:
+    ref_urls = [{"name": r.stem, "url": cached_url(r)} for r in refs]
+    if changed or force:
         cache["updated_at"] = datetime.now(timezone.utc).isoformat()
         cache["files"] = files
+        cache["source"] = "local-upload"
         _write_json(cache_path, cache)
     return {"avatar_url": avatar_url, "refs": ref_urls, "source": "local-upload"}
+
+
+def ensure_cdn_urls(client: KieClient, brand_dir: Path, avatar: Path | None, refs: list[Path]) -> dict:
+    """Resolve HTTPS input_urls for Kie i2i.
+
+    Prefer **local File Upload API** when avatar.png exists. Third-party hosts in
+    brand-urls.json (e.g. mayai.ru) often return 200 for the user but Kie cloud
+    gets ``400 Image fetch failed`` — then covers silently fall back to ffmpeg.
+    Remote brand-urls are only used when no local avatar is available.
+    """
+    if avatar is not None and avatar.is_file():
+        print(f"   brand kit → Kie File Upload API (avatar + {len(refs)} refs)")
+        return _upload_brand_to_kie_cdn(client, brand_dir, avatar, refs)
+
+    remote = _brand_urls_from_remote(brand_dir)
+    if remote:
+        print(f"   brand-urls.json → avatar + {len(remote['refs'])} refs (HTTPS, no local avatar)")
+        return remote
+
+    raise KieApiError("Нет avatar.png и нет brand-urls.json с avatar_url")
+
+
+def _is_image_fetch_failed(error: str | None) -> bool:
+    if not error:
+        return False
+    low = error.lower()
+    return "image fetch failed" in low or "file upload api" in low
 
 
 def generate_ai_cover(
@@ -368,6 +410,31 @@ def main() -> None:
                 resolution=args.resolution,
             )
             entry["kie_task_id"] = task_id
+            # mayai.ru (and similar) often fail on Kie side → re-upload local brand to Kie CDN once
+            if (
+                not success
+                and _is_image_fetch_failed(error)
+                and avatar is not None
+                and avatar.is_file()
+                and cdn.get("source") != "local-upload"
+            ):
+                print(f"   [WARN] clip_{index:02d} Image fetch failed → re-upload brand to Kie CDN")
+                cdn = _upload_brand_to_kie_cdn(client, brand_dir, avatar, refs, force=True)
+                cdn_refs = cdn.get("refs") if isinstance(cdn.get("refs"), list) else []
+                if cdn_refs:
+                    ref = cdn_refs[(index - 1) % len(cdn_refs)]
+                    style_name = str((ref or {}).get("name") or style_name)
+                    entry["style_ref"] = style_name
+                success, task_id, error = generate_ai_cover(
+                    client,
+                    prompt=prompt,
+                    avatar_url=str(cdn["avatar_url"]),
+                    ref_url=(ref or {}).get("url") if isinstance(ref, dict) else None,
+                    output=cover_path,
+                    resolution=args.resolution,
+                )
+                entry["kie_task_id"] = task_id
+                entry["cdn_retry"] = "local-upload"
             if not success and video:
                 print(f"   [WARN] clip_{index:02d} Kie fail → ffmpeg fallback ({error})")
                 success = extract_cover(video, cover_path, at_sec=args.at_sec)

@@ -21,6 +21,10 @@ videoshorts-memory/brand/covers/
 
 Ключ: `videoshorts.local.env` → `KIE_API_KEY` (или env). Не коммитить.
 
+`prepare_covers.py` **сначала грузит локальный** `avatar.png` + `refs/` через Kie File Upload API.  
+`brand-urls.json` (mayai.ru) — только если локального avatar нет. Иначе Kie часто отвечает  
+`400 Image fetch failed` и UI показывает «обложка отвалилась» (ffmpeg fallback).
+
 Пример `brand-urls.json`:
 
 ```json
@@ -55,6 +59,7 @@ python prepare_covers.py "../videoshorts-memory/output/clips/<stem>" --mode kie
 2. Чередует style ref (01→02→03→04…)
 3. Сохраняет лицо с avatar; одежду/позу/эмоцию может менять
 4. Kie i2i: `input_urls = [avatar, style_ref]`, `aspect_ratio=9:16`
+5. Фон — **белый / светлый high-key** (не тёмный dramatic background)
 
 ## Выход
 
