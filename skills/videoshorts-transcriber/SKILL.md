@@ -26,10 +26,13 @@ python transcribe.py "<video_path>" -o "../videoshorts-memory/transcripts/<stem>
    - `transcript.srt`
    - `audio.wav`
 
-## Env
+## Env / language
 
 - `VIDEOSHORTS_WHISPER_WORD_TIMESTAMPS=1` (default) — word-level для субтитров
-- `VIDEOSHORTS_WHISPER_LANGUAGE=ru`
+- `VIDEOSHORTS_WHISPER_LANGUAGE=ru` — только реальный ISO-код (`ru`, `en`, …)
+- Brief / UI `language: auto` → **не** передавать `--language auto` и **не** ставить env в `auto`/`detect`/`none`
+- Автоопределение = `language=None` в faster-whisper (omit `--language` / unset env)
+- Worker нормализует `auto`/`detect`/пустую строку → `None` (не падает ValueError)
 
 ## Ошибки
 

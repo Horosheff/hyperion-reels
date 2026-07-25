@@ -27,15 +27,25 @@ description: Границы мысли + монтажное ТЗ — пишет 
 - Не раздувай клип паузами сверх `max_sec`.
 - В `duration_policy` / notes пиши фактический диапазон brief (например `variable_30_90_sec`), не хардкод `30_60`.
 
+### Post-cleanup gate (обязательно, INC-20260725-2041)
+
+Guardian QA меряет **финальный** MP4 после jump-cut/silence cleanup, не сырое окно.
+
+- Для каждого keep-клипа посчитай `estimated_duration_after_cleanup` (= `estimated_clean_duration` = raw − planned removals).
+- **Gate:** `estimated_duration_after_cleanup ≥ brief.min_sec − 2`.
+- Если ниже — **расширь** raw start/end (пока не упрёшься в topic-shift / max_sec) или **смягчи** jump_cuts / silence_remove; иначе → `rejected_clips[]` / montage `status: REVIEW`, **не** `READY_FOR_CUTTER`.
+- Поля пиши в clip и в `boundary_refinement` / montage clip.
+
 ## Действия
 
 1. Уточни start/end по segment/word/silence/filler; **не** режь punch-pause ~1.2s после hook.
-2. В `clips[]` только `finished_thought_gate=pass`. Обрывки → `rejected_clips[]`.
+2. В `clips[]` только `finished_thought_gate=pass` **и** post-cleanup gate pass. Обрывки / слишком короткий clean → `rejected_clips[]`.
 3. Уважай editor REJECT (и согласованный virality/scores REJECT). При конфликте — чини границу word-evidence или reject.
-4. Для каждого keep-клипа собери montage: `jump_cuts`, `silence_remove`, `filler_remove`/`glue_notes`, `zoom_punch`, `do_not_cut_before`, `do_not_cut_after`, статус `READY_FOR_CUTTER`. Leading silence после hook не в auto-cut. Уважай brief `zoomPunch`.
+4. Для каждого keep-клипа собери montage: `jump_cuts`, `silence_remove`, `filler_remove`/`glue_notes`, `zoom_punch`, `do_not_cut_before`, `do_not_cut_after`, `estimated_duration_after_cleanup`, статус `READY_FOR_CUTTER` только если clean ≥ min_sec−2. Leading silence после hook не в auto-cut. Уважай brief `zoomPunch`.
 5. **Write** `moments/refined-moments.json` (`decision_source: agent`, `authored_by: videoshorts-boundary-refiner`).
 6. **Write** финальный `moments/clip-decisions.json` со всеми REQUIRED decision fields, `selected_by_agent: true` только с evidence.
 7. **Write** `moments/montage-plan.json` (`authored_by: videoshorts-boundary-refiner`).
+
 
 ## Validate
 

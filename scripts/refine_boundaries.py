@@ -90,15 +90,26 @@ def _estimated_cleanup_removal(
     return round(total, 3), applied
 
 
+# After jump-cut/silence cleanup, allow brief.min_sec − this (word-snap / estimate slack).
+CLEAN_DURATION_TOLERANCE_SEC = 2.0
+
+
 def _duration_estimate(start: float, end: float, cleanup: dict) -> dict:
     raw_duration = round(end - start, 3)
     estimated_removed, items = _estimated_cleanup_removal(cleanup, start, end)
+    clean = round(max(0.0, raw_duration - estimated_removed), 3)
     return {
         "raw_duration": raw_duration,
         "estimated_removed_seconds": estimated_removed,
-        "estimated_clean_duration": round(max(0.0, raw_duration - estimated_removed), 3),
+        "estimated_clean_duration": clean,
+        # Alias used by agents / retry-rejected (INC-20260725-2041)
+        "estimated_duration_after_cleanup": clean,
         "estimated_items": items[:30],
     }
+
+
+def _min_clean_gate(min_sec: float) -> float:
+    return max(0.0, float(min_sec) - CLEAN_DURATION_TOLERANCE_SEC)
 
 
 def _trim_cleanup_edges(
@@ -297,8 +308,11 @@ def refine_clip(index: int, raw: dict, segments: list, points: list[float], clea
     # Account for expected cuts before render: choose a wider raw window when
     # cleanup would make the final clip too short — but never past a finished payoff
     # into a new micro-topic.
-    for _ in range(4):
-        if clean_estimate["estimated_clean_duration"] >= min_sec:
+    # INC-20260725-2041: gate on estimated_duration_after_cleanup ≥ min_sec−2
+    # (not raw window alone); Guardian QA uses final duration after jump cuts.
+    min_clean = _min_clean_gate(min_sec)
+    for _ in range(6):
+        if clean_estimate["estimated_clean_duration"] >= min_clean:
             break
         if payoff_locked:
             expansion_attempts.append({
@@ -308,7 +322,7 @@ def refine_clip(index: int, raw: dict, segments: list, points: list[float], clea
                 "reason": "skip_expand_past_finished_payoff",
             })
             break
-        deficit = min_sec - clean_estimate["estimated_clean_duration"]
+        deficit = min_clean - clean_estimate["estimated_clean_duration"]
         raw_cap = max_sec + min(20.0, clean_estimate["estimated_removed_seconds"] + deficit + 0.5)
         if end - start >= raw_cap:
             break
@@ -349,6 +363,33 @@ def refine_clip(index: int, raw: dict, segments: list, points: list[float], clea
     text = _clip_text(segments, start, end)
     evidence = raw.get("semantic_boundary_evidence") if isinstance(raw.get("semantic_boundary_evidence"), dict) else {}
     finished, reject_gate = _has_finished_thought(raw, evidence, text, score)
+    if clean_estimate["estimated_clean_duration"] < min_clean:
+        reject_gate = (
+            f"estimated_duration_after_cleanup "
+            f"{clean_estimate['estimated_clean_duration']:.1f}s < min_sec−2 ({min_clean:.1f}s)"
+        )
+        rejected = {
+            **raw,
+            "index": index,
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "duration": duration,
+            "status": "REJECT",
+            "reject_reason": reject_gate,
+            "estimated_clean_duration": clean_estimate["estimated_clean_duration"],
+            "estimated_duration_after_cleanup": clean_estimate["estimated_duration_after_cleanup"],
+            "transcript_excerpt": text or raw.get("transcript_excerpt", ""),
+            "boundary_refinement": {
+                "status": "rejected",
+                "reason": reject_gate,
+                "original_start": round(original_start, 3),
+                "original_end": round(original_end, 3),
+                "cleanup_refinement": cleanup_refinement,
+                "cleanup_duration_expansion": expansion_attempts,
+                "estimated_clean_duration": clean_estimate["estimated_clean_duration"],
+            },
+        }
+        return None, rejected
     if not finished:
         rejected = {
             **raw,
@@ -393,6 +434,7 @@ def refine_clip(index: int, raw: dict, segments: list, points: list[float], clea
         "reject_reason": score.get("reject_reason"),
         "duration": duration,
         "estimated_clean_duration": clean_estimate["estimated_clean_duration"],
+        "estimated_duration_after_cleanup": clean_estimate["estimated_duration_after_cleanup"],
         "estimated_cleanup_removed_seconds": clean_estimate["estimated_removed_seconds"],
         "transcript_excerpt": text or raw.get("transcript_excerpt", ""),
         "semantic_boundary_evidence": evidence,
@@ -402,14 +444,19 @@ def refine_clip(index: int, raw: dict, segments: list, points: list[float], clea
             "original_end": round(original_end, 3),
             "delta_start": round(start - original_start, 3),
             "delta_end": round(end - original_end, 3),
-            "duration_policy": "variable_30_60_sec",
-            "clean_duration_policy": "expand raw boundaries when planned cleanup would make final clip too short",
+            "duration_policy": f"variable_{int(min_sec)}_{int(max_sec)}_sec",
+            "clean_duration_policy": (
+                f"estimated_duration_after_cleanup >= min_sec−{CLEAN_DURATION_TOLERANCE_SEC:g} "
+                "(expand raw window or REJECT)"
+            ),
             "estimated_clean_duration": clean_estimate["estimated_clean_duration"],
+            "estimated_duration_after_cleanup": clean_estimate["estimated_duration_after_cleanup"],
             "estimated_cleanup_removed_seconds": clean_estimate["estimated_removed_seconds"],
             "cleanup_duration_expansion": expansion_attempts,
             "cleanup_estimated_items": clean_estimate["estimated_items"],
             "cleanup_refinement": cleanup_refinement,
             "finished_thought_gate": "pass",
+            "min_clean_gate_sec": min_clean,
         },
     }, None
 

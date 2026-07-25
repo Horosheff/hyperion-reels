@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -35,6 +36,97 @@ def _require_agent_source(data: dict, errors: list[str], *, label: str) -> None:
 def _clips_list(data: dict) -> list:
     clips = data.get("clips")
     return clips if isinstance(clips, list) else []
+
+
+CLEAN_DURATION_TOLERANCE_SEC = 2.0
+
+
+def _resolve_min_sec(data: dict, path: Path) -> float | None:
+    """Brief / selection_contract min_sec for post-cleanup duration gate."""
+    contract = data.get("selection_contract") if isinstance(data.get("selection_contract"), dict) else {}
+    overrides = data.get("brief_overrides") if isinstance(data.get("brief_overrides"), dict) else {}
+    for src in (contract, overrides, data):
+        for key in ("min_sec", "minSec", "cleanup_min_duration_guard"):
+            if src.get(key) is not None:
+                try:
+                    return float(src[key])
+                except (TypeError, ValueError):
+                    pass
+    # Sibling brief: moments/../00-brief.md
+    for cand in (
+        path.parent.parent / "00-brief.md",
+        path.parent.parent / "run-request.json",
+        path.parent / "00-brief.md",
+    ):
+        if not cand.is_file():
+            continue
+        text = cand.read_text(encoding="utf-8-sig")
+        if cand.suffix.lower() == ".json":
+            try:
+                payload = json.loads(text)
+            except Exception:
+                continue
+            settings = payload.get("settings") if isinstance(payload.get("settings"), dict) else payload
+            for key in ("min_sec", "minSec"):
+                if settings.get(key) is not None:
+                    try:
+                        return float(settings[key])
+                    except (TypeError, ValueError):
+                        pass
+            continue
+        m = re.search(r"(?im)^\s*min_sec\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)", text)
+        if m:
+            return float(m.group(1))
+        m = re.search(r"(?im)^\s*minSec\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)", text)
+        if m:
+            return float(m.group(1))
+    return None
+
+
+def _clip_estimated_after_cleanup(clip: dict) -> float | None:
+    for key in (
+        "estimated_duration_after_cleanup",
+        "estimated_clean_duration",
+    ):
+        if clip.get(key) is not None:
+            try:
+                return float(clip[key])
+            except (TypeError, ValueError):
+                pass
+    refinement = clip.get("boundary_refinement") if isinstance(clip.get("boundary_refinement"), dict) else {}
+    for key in ("estimated_duration_after_cleanup", "estimated_clean_duration"):
+        if refinement.get(key) is not None:
+            try:
+                return float(refinement[key])
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def _gate_estimated_clean_duration(data: dict, path: Path, errors: list[str], *, label: str) -> None:
+    """INC-20260725-2041: keep clips must satisfy estimated_after_cleanup ≥ min_sec−2."""
+    min_sec = _resolve_min_sec(data, path)
+    if min_sec is None:
+        return
+    gate = max(0.0, float(min_sec) - CLEAN_DURATION_TOLERANCE_SEC)
+    for i, clip in enumerate(_clips_list(data)):
+        if not isinstance(clip, dict):
+            continue
+        status = str(clip.get("status") or "").upper()
+        if status in {"REJECT", "REVIEW"}:
+            continue
+        est = _clip_estimated_after_cleanup(clip)
+        if est is None:
+            errors.append(
+                f"{label} clips[{i}]: missing estimated_duration_after_cleanup "
+                f"(or estimated_clean_duration); required for min_sec−2 gate"
+            )
+            continue
+        if est < gate:
+            errors.append(
+                f"{label} clips[{i}]: estimated_duration_after_cleanup {est:.1f}s "
+                f"< min_sec−{CLEAN_DURATION_TOLERANCE_SEC:g} ({gate:.1f}s; brief.min_sec={min_sec:g})"
+            )
 
 
 def validate_cleanup_plan(path: Path) -> tuple[bool, list[str]]:
@@ -197,6 +289,7 @@ def validate_refined_moments(path: Path) -> tuple[bool, list[str]]:
         gate = evidence.get("finished_thought_gate") or clip.get("finished_thought_gate")
         if str(gate).lower() not in {"pass", "true", "1", "ok"}:
             errors.append(f"clips[{i}]: finished_thought_gate must pass")
+    _gate_estimated_clean_duration(data, path, errors, label="refined-moments")
     return not errors, errors
 
 
@@ -280,6 +373,7 @@ def validate_montage_plan(path: Path) -> tuple[bool, list[str]]:
             pass
         if "do_not_cut_before" not in clip and "do_not_cut_after" not in clip:
             errors.append(f"clips[{i}]: need do_not_cut_before/after guidance")
+    _gate_estimated_clean_duration(data, path, errors, label="montage-plan")
     return not errors, errors
 
 

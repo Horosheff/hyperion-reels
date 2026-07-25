@@ -108,10 +108,67 @@ def _remap_timed_items(items: list[dict], clip_start: float, clip_end: float, in
     return remapped
 
 
+def resolve_moments_path(moments: Path) -> Path:
+    """Prefer refined-moments.json when present (post boundary-refiner / cutter).
+
+    INC-20260725-2038: stem-moments.json start/end diverge from cropped clips after
+    refinement; remapping against stale bounds breaks subtitle timelines.
+    """
+    moments = Path(moments)
+    if moments.is_dir():
+        refined = moments / "refined-moments.json"
+        if refined.is_file():
+            return refined
+        stem_hits = sorted(moments.glob("*-moments.json"))
+        if stem_hits:
+            return stem_hits[0]
+        return moments / "refined-moments.json"
+
+    refined_sibling = moments.parent / "refined-moments.json"
+    if moments.name == "refined-moments.json":
+        return moments
+    if refined_sibling.is_file():
+        if moments.resolve() != refined_sibling.resolve():
+            print(
+                f"[info] preferring refined-moments.json over {moments.name} "
+                f"(post-boundary bounds for subtitle remap)",
+                file=sys.stderr,
+            )
+        return refined_sibling
+    return moments
+
+
+def _parse_only_indexes(raw: str | None) -> set[int] | None:
+    """Parse ``1,2,5`` / ``01 03`` into a set of clip indexes. None = all clips."""
+    if raw is None or not str(raw).strip():
+        return None
+    indexes: set[int] = set()
+    for part in str(raw).replace(";", ",").replace(" ", ",").split(","):
+        token = part.strip()
+        if not token:
+            continue
+        indexes.add(int(token))
+    return indexes or None
+
+
+def _load_existing_subtitle_manifest(path: Path) -> dict:
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="VideoShorts: ASS/SRT per clip")
     parser.add_argument("transcript", type=Path, help="transcript.json")
-    parser.add_argument("moments", type=Path, help="moments.json")
+    parser.add_argument(
+        "moments",
+        type=Path,
+        help="moments JSON or moments/ dir — prefers refined-moments.json when present",
+    )
     parser.add_argument("-o", "--output-dir", type=Path, required=True, help="clips dir with cropped mp4")
     parser.add_argument("-t", "--template", default="mrbeast", choices=list_templates())
     parser.add_argument("--template-json", type=Path, default=None, help="Custom JSON subtitle template")
@@ -122,14 +179,22 @@ def main() -> None:
     parser.add_argument("--emoji", action=argparse.BooleanOptionalAction, default=False, help="Rule-based emoji subtitles")
     parser.add_argument("--hook-style", action=argparse.BooleanOptionalAction, default=None, help="Scale first word in each ASS line")
     parser.add_argument("--hook-scale", type=float, default=None, help="ASS hook-style scale, default 1.3")
+    parser.add_argument(
+        "--only-indexes",
+        default=None,
+        help="Partial regen after re-cut: comma/space list of clip indexes (e.g. 1,2,5). "
+        "Preserves ASS/SRT + manifest entries for other KEEP clips (INC-20260725-2100).",
+    )
     args = parser.parse_args()
 
-    if not args.transcript.is_file() or not args.moments.is_file():
+    moments_path = resolve_moments_path(args.moments)
+    if not args.transcript.is_file() or not moments_path.is_file():
         print("[ERROR] transcript or moments not found", file=sys.stderr)
         sys.exit(1)
 
+    only_indexes = _parse_only_indexes(args.only_indexes)
     data = json.loads(args.transcript.read_text(encoding="utf-8-sig"))
-    moments = json.loads(args.moments.read_text(encoding="utf-8-sig"))
+    moments = json.loads(moments_path.read_text(encoding="utf-8-sig"))
     segments = [s.__dict__ for s in segments_from_json(data)]
     clips = clips_from_json(moments)
     raw_clips = [c for c in moments.get("clips", []) if isinstance(c, dict)]
@@ -148,15 +213,36 @@ def main() -> None:
 
     sub_dir = args.output_dir / "subtitles"
     sub_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = args.output_dir / "subtitles-manifest.json"
+    prev_manifest = _load_existing_subtitle_manifest(manifest_path)
+    prev_by_index: dict[int, dict] = {}
+    for entry in prev_manifest.get("clips", []) or []:
+        if isinstance(entry, dict) and entry.get("index") is not None:
+            prev_by_index[int(entry["index"])] = entry
 
     manifest = []
     use_ass = args.format in ("ass", "both") and words and args.karaoke
     keep_indexes: set[int] = set()
+    regenerated = 0
+    preserved = 0
 
     for i, clip in enumerate(clips, 1):
         raw = raw_clips[i - 1] if i - 1 < len(raw_clips) else {}
         idx = int(raw.get("index") or i)
         keep_indexes.add(idx)
+        if only_indexes is not None and idx not in only_indexes:
+            preserved_entry = prev_by_index.get(idx)
+            if preserved_entry:
+                manifest.append(preserved_entry)
+                preserved += 1
+                print(f"   clip {idx}: preserved existing subtitles (only-indexes)")
+            else:
+                print(
+                    f"[warn] clip {idx}: --only-indexes skip but no prior manifest entry",
+                    file=sys.stderr,
+                )
+            continue
+
         ass_path = sub_dir / f"clip_{idx:02d}.ass"
         srt_path = sub_dir / f"clip_{idx:02d}.srt"
         cutter_item = cutter_manifest.get(idx)
@@ -195,9 +281,13 @@ def main() -> None:
             entry["srt"] = str(srt_path.name)
 
         manifest.append(entry)
+        regenerated += 1
         print(f"   clip {idx}: subtitles → {sub_dir}")
 
-    # Drop stale ASS/SRT from previous larger keep sets (e.g. 10 → 7)
+    manifest.sort(key=lambda item: int(item.get("index") or 0))
+
+    # Drop stale ASS/SRT from previous larger keep sets (e.g. 10 → 7).
+    # Never delete indexes outside only-indexes when doing a partial regen.
     removed = 0
     for stale in list(sub_dir.glob("clip_*.ass")) + list(sub_dir.glob("clip_*.srt")):
         try:
@@ -210,14 +300,16 @@ def main() -> None:
     if removed:
         print(f"   [info] removed {removed} stale subtitle file(s)")
 
-    (args.output_dir / "subtitles-manifest.json").write_text(
+    karaoke_flag = bool(use_ass) if regenerated else bool(prev_manifest.get("karaoke", use_ass))
+    manifest_path.write_text(
         json.dumps(
             {
-                "template": args.template,
-                "template_json": str(args.template_json.resolve()) if args.template_json else None,
-                "format": args.format,
-                "karaoke": bool(use_ass),
-                "emoji": bool(args.emoji),
+                "template": args.template if regenerated else prev_manifest.get("template", args.template),
+                "template_json": str(args.template_json.resolve()) if args.template_json else prev_manifest.get("template_json"),
+                "format": args.format if regenerated else prev_manifest.get("format", args.format),
+                "karaoke": karaoke_flag,
+                "emoji": bool(args.emoji) if regenerated else bool(prev_manifest.get("emoji", False)),
+                "only_indexes": sorted(only_indexes) if only_indexes is not None else None,
                 "clips": manifest,
             },
             ensure_ascii=False,
@@ -225,7 +317,10 @@ def main() -> None:
         ),
         encoding="utf-8",
     )
-    print(f"✅ Subtitles for {len(clips)} clips in {sub_dir}")
+    print(
+        f"✅ Subtitles: regenerated={regenerated}, preserved={preserved}, "
+        f"total_manifest={len(manifest)} → {sub_dir}"
+    )
 
 
 if __name__ == "__main__":

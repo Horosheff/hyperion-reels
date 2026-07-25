@@ -31,6 +31,9 @@ def cleanup_items(cleanup: dict, start: float, end: float, key: str) -> list[dic
     return hits
 
 
+CLEAN_DURATION_TOLERANCE_SEC = 2.0
+
+
 def _parse_brief_bool(brief: Path | None, *keys: str, default: bool | None = None) -> bool | None:
     """Read zoomPunch/progressBar from 00-brief.md or run-request.json."""
     if brief is None:
@@ -57,6 +60,37 @@ def _parse_brief_bool(brief: Path | None, *keys: str, default: bool | None = Non
         m = re.search(rf"(?im)^\s*{re.escape(key)}\s*[:=]\s*(\S+)", text)
         if m:
             return m.group(1).strip().lower() in {"1", "true", "yes", "on"}
+    return default
+
+
+def _parse_brief_float(brief: Path | None, *keys: str, default: float | None = None) -> float | None:
+    """Read min_sec/max_sec from 00-brief.md or run-request.json."""
+    if brief is None or not brief.is_file():
+        return default
+    if brief.suffix.lower() == ".json":
+        try:
+            data = read_json(brief, {})
+            settings = data.get("settings") if isinstance(data.get("settings"), dict) else data
+            for key in keys:
+                if key in settings and settings[key] is not None:
+                    return float(settings[key])
+                # camelCase UI: minSec
+                camel = key.replace("_", "")
+                for cand in (key, camel, key.lower(), f"{camel[0].lower()}{camel[1:]}" if camel else key):
+                    if cand in settings and settings[cand] is not None:
+                        return float(settings[cand])
+        except Exception:
+            return default
+        return default
+    text = brief.read_text(encoding="utf-8-sig")
+    for key in keys:
+        m = re.search(rf"(?im)^\s*{re.escape(key)}\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)", text)
+        if m:
+            return float(m.group(1))
+        camel = "minSec" if key == "min_sec" else ("maxSec" if key == "max_sec" else key)
+        m = re.search(rf"(?im)^\s*{re.escape(camel)}\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)", text)
+        if m:
+            return float(m.group(1))
     return default
 
 
@@ -152,6 +186,15 @@ def main() -> None:
     brief_zoom = _parse_brief_bool(brief_path, "zoomPunch", "zoom_punch")
     brief_progress = _parse_brief_bool(brief_path, "progressBar", "progress_bar")
     brief_broll = _parse_brief_bool(brief_path, "bRoll", "b_roll", default=False)
+    brief_min = _parse_brief_float(brief_path, "min_sec", "minSec")
+    # INC-20260725-2041: min_duration guard must follow brief.min_sec (not hardcode 30)
+    if args.min_duration != 30.0:
+        min_duration = float(args.min_duration)
+    elif brief_min is not None:
+        min_duration = float(brief_min)
+    else:
+        min_duration = float(args.min_duration)
+    min_clean_gate = max(0.0, min_duration - CLEAN_DURATION_TOLERANCE_SEC)
     if args.zoom_punch is not None:
         zoom_default = bool(args.zoom_punch)
     elif brief_zoom is not None:
@@ -179,9 +222,12 @@ def main() -> None:
         silences, preserved = _filter_silences_for_montage(silences_raw, start)
         planned_items = [{**item, "source": "silence_remove"} for item in silences]
         planned_items.extend({**item, "source": "filler_remove"} for item in fillers)
-        applied_cleanup, skipped_cleanup, estimated_removed = _bounded_cleanup(planned_items, start, end, args.min_duration)
+        applied_cleanup, skipped_cleanup, estimated_removed = _bounded_cleanup(
+            planned_items, start, end, min_duration
+        )
         applied_silences = [item for item in applied_cleanup if item.get("source") == "silence_remove"]
         applied_fillers = [item for item in applied_cleanup if item.get("source") == "filler_remove"]
+        estimated_clean = round(raw_duration - estimated_removed, 3)
         d = dramaturgy.get(str(idx), {})
         jump_cuts = []
         for item in applied_silences[:8]:
@@ -194,14 +240,36 @@ def main() -> None:
             zoom_punch = zoom_default
         else:
             zoom_punch = bool(clip.get("hook_score", 0) and int(clip.get("hook_score") or 0) >= 55)
+        below_clean_gate = estimated_clean < min_clean_gate
+        if d.get("status") == "REJECT":
+            status = "REVIEW"
+        elif below_clean_gate:
+            status = "REVIEW"
+        else:
+            status = "READY_FOR_CUTTER"
+        if below_clean_gate:
+            glue = (
+                f"BLOCKER: estimated_duration_after_cleanup {estimated_clean:.1f}s "
+                f"< min_sec−{CLEAN_DURATION_TOLERANCE_SEC:g} ({min_clean_gate:.1f}s); "
+                "expand window or soften jump_cuts before cutter."
+            )
+        elif d.get("status") == "REJECT":
+            glue = d.get("dramaturg_notes", "")
+        else:
+            glue = (
+                "Сохранять причинно-следственную связку setup -> tension -> insight/result -> clean ending; "
+                "не склеивать поверх смыслового перехода."
+            )
         plans.append({
             "index": idx,
             "start": round(start, 3),
             "end": round(end, 3),
             "raw_duration": raw_duration,
             "estimated_cleanup_removed_seconds": estimated_removed,
-            "estimated_clean_duration": round(raw_duration - estimated_removed, 3),
-            "cleanup_min_duration_guard": args.min_duration,
+            "estimated_clean_duration": estimated_clean,
+            "estimated_duration_after_cleanup": estimated_clean,
+            "cleanup_min_duration_guard": min_duration,
+            "min_clean_gate_sec": min_clean_gate,
             "cleanup_skipped_for_min_duration": skipped_cleanup[:12],
             "jump_cuts": jump_cuts,
             "silence_remove": {
@@ -213,18 +281,13 @@ def main() -> None:
                 "count": len(applied_fillers),
                 "items": applied_fillers[:12],
             },
-            "glue_notes": clean(
-                "Сохранять причинно-следственную связку setup -> tension -> insight/result -> clean ending; "
-                "не склеивать поверх смыслового перехода."
-                if d.get("status") != "REJECT" else d.get("dramaturg_notes", ""),
-                420,
-            ),
+            "glue_notes": clean(glue, 420),
             "zoom_punch": zoom_punch,
             "progress_bar": bool(progress_default),
             "b_roll_enabled": broll_enabled,
             "do_not_cut_before": round(start, 3),
             "do_not_cut_after": round(end, 3),
-            "status": "REVIEW" if d.get("status") == "REJECT" else "READY_FOR_CUTTER",
+            "status": status,
         })
     payload = {
         "schema_version": 1,
@@ -232,13 +295,16 @@ def main() -> None:
         "decision_source": "local_heuristic_draft",
         "local_fallback_note": (
             "Черновик монтажного ТЗ; brief zoomPunch/progressBar перекрывают hook_score heuristic. "
-            "Leading silence в окне hook (~1.2s) и mid-phrase gaps не попадают в jump_cuts."
+            "Leading silence в окне hook (~1.2s) и mid-phrase gaps не попадают в jump_cuts. "
+            f"estimated_duration_after_cleanup must be ≥ brief.min_sec−{CLEAN_DURATION_TOLERANCE_SEC:g}."
         ),
         "brief_overrides": {
             "brief_path": str(brief_path.resolve()) if brief_path and brief_path.is_file() else None,
             "zoom_punch": zoom_default,
             "progress_bar": progress_default,
             "b_roll_enabled": broll_enabled,
+            "min_sec": min_duration,
+            "min_clean_gate_sec": min_clean_gate,
         },
         "clips": plans,
         "summary": {
@@ -249,6 +315,12 @@ def main() -> None:
             "brief_zoom_punch": zoom_default,
             "brief_progress_bar": progress_default,
             "brief_b_roll": broll_enabled,
+            "below_clean_gate": sum(
+                1
+                for item in plans
+                if float(item.get("estimated_duration_after_cleanup") or item.get("estimated_clean_duration") or 0)
+                < min_clean_gate
+            ),
         },
     }
     out = args.output or (args.refined_moments.parent / "montage-plan.json")

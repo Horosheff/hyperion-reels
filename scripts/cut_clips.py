@@ -110,8 +110,11 @@ def main() -> None:
         removed_so_far = 0.0
         for item in items:
             try:
-                start = max(clip_start, float(item["start"]))
-                end = min(clip_end, float(item["end"]))
+                # jump_cuts use from/to; silence/filler use start/end
+                raw_start = item.get("start", item.get("from"))
+                raw_end = item.get("end", item.get("to"))
+                start = max(clip_start, float(raw_start))
+                end = min(clip_end, float(raw_end))
             except (KeyError, TypeError, ValueError):
                 continue
             duration = end - start
@@ -125,7 +128,7 @@ def main() -> None:
                 "start": start,
                 "end": end,
                 "duration": round(duration, 3),
-                "reason": item.get("reason") or item.get("text") or item.get("type"),
+                "reason": item.get("reason") or item.get("text") or item.get("type") or item.get("agent_reason"),
             }
             if removed_so_far + duration > max_remove:
                 skipped_items.append({**item_summary, "skip_reason": "min_duration_guard"})

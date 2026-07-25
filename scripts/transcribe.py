@@ -29,15 +29,23 @@ def main() -> None:
     parser.add_argument("-m", "--model", default="base", choices=["tiny", "base", "small", "medium", "large", "turbo"])
     parser.add_argument("--force-cpu", action="store_true", help="Принудительно использовать CPU/int8 для Whisper")
     parser.add_argument("--word-timestamps", action=argparse.BooleanOptionalAction, default=True, help="Word timestamps для karaoke ASS")
-    parser.add_argument("--language", default=None, help="Язык Whisper, например ru/en; по умолчанию auto")
+    parser.add_argument(
+        "--language",
+        default=None,
+        help="Язык Whisper (ru/en). auto/detect/пусто = автоопределение (language=None)",
+    )
     parser.add_argument("--beam-size", type=int, default=None, help="Beam size faster-whisper")
     args = parser.parse_args()
 
     if args.force_cpu:
         os.environ["VIDEOSHORTS_WHISPER_FORCE_CPU"] = "1"
     os.environ["VIDEOSHORTS_WHISPER_WORD_TIMESTAMPS"] = "1" if args.word_timestamps else "0"
-    if args.language:
-        os.environ["VIDEOSHORTS_WHISPER_LANGUAGE"] = args.language
+    # auto/detect must not reach faster-whisper as a language code
+    lang = (args.language or "").strip()
+    if lang and lang.lower() not in {"auto", "detect", "none", "null"}:
+        os.environ["VIDEOSHORTS_WHISPER_LANGUAGE"] = lang
+    else:
+        os.environ.pop("VIDEOSHORTS_WHISPER_LANGUAGE", None)
     if args.beam_size is not None:
         os.environ["VIDEOSHORTS_WHISPER_BEAM_SIZE"] = str(args.beam_size)
 

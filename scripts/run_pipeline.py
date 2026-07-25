@@ -171,8 +171,12 @@ def main() -> None:
     }
     if args.force_cpu:
         env["VIDEOSHORTS_WHISPER_FORCE_CPU"] = "1"
-    if args.language:
-        env["VIDEOSHORTS_WHISPER_LANGUAGE"] = args.language
+    # auto/detect → omit env so worker passes language=None (autodetect)
+    lang = str(args.language).strip() if args.language else ""
+    if lang and lang.lower() not in {"auto", "detect", "none", "null", ""}:
+        env["VIDEOSHORTS_WHISPER_LANGUAGE"] = lang
+    else:
+        env.pop("VIDEOSHORTS_WHISPER_LANGUAGE", None)
     if args.beam_size is not None:
         env["VIDEOSHORTS_WHISPER_BEAM_SIZE"] = str(args.beam_size)
     if args.subtitles_hook_style:
@@ -250,7 +254,13 @@ def main() -> None:
     ]
     if args.force_cpu:
         transcribe_cmd.append("--force-cpu")
-    if args.language and str(args.language).strip().lower() not in {"auto", "none", ""}:
+    if args.language and str(args.language).strip().lower() not in {
+        "auto",
+        "detect",
+        "none",
+        "null",
+        "",
+    }:
         transcribe_cmd += ["--language", args.language]
     if args.beam_size is not None:
         transcribe_cmd += ["--beam-size", str(args.beam_size)]

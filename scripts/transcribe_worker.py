@@ -77,6 +77,22 @@ def _detect_device() -> str:
         return "cpu"
 
 
+def _normalize_whisper_language(raw: str | None) -> str | None:
+    """faster-whisper expects a real ISO code or None (autodetect).
+
+    Values like ``auto`` / ``detect`` are UI/brief conveniences — never pass them
+    through as ``language=``.
+    """
+    if raw is None:
+        return None
+    value = str(raw).strip()
+    if not value:
+        return None
+    if value.lower() in {"auto", "detect", "none", "null"}:
+        return None
+    return value
+
+
 def main() -> None:
     _configure_stdio()
     _prepend_nvidia_wheel_bins_to_path()
@@ -114,9 +130,14 @@ def main() -> None:
         print("   Whisper: fallback device=cpu compute_type=int8", flush=True)
 
     vad_params = dict(min_silence_duration_ms=500, speech_pad_ms=400, min_speech_duration_ms=250)
-    lang = os.environ.get("VIDEOSHORTS_WHISPER_LANGUAGE", "").strip() or None
+    lang = _normalize_whisper_language(os.environ.get("VIDEOSHORTS_WHISPER_LANGUAGE"))
     beam_size = int(os.environ.get("VIDEOSHORTS_WHISPER_BEAM_SIZE", "1"))
     word_mode = os.environ.get("VIDEOSHORTS_WHISPER_WORD_TIMESTAMPS", "1").strip().lower() in ("1", "true", "yes")
+
+    if lang is None:
+        print("   Language: auto-detect (language=None)", flush=True)
+    else:
+        print(f"   Language: forced={lang}", flush=True)
 
     segments, info = model.transcribe(
         str(audio_path),

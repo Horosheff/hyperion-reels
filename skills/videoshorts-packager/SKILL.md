@@ -8,6 +8,7 @@
 - перед packager: `videoshorts-metadata-writer` + Guardian **PASS**
 - в Agent mode: `VIDEOSHORTS_AGENT_MODE=1` и подтверждённые decisions
 - metadata: копировать и `.metadata.json`, и `.metadata.md`; если в `metadata-manifest` поле `markdown` пустое/`null` — fallback на `clip_XX.metadata.md` рядом с json (не оставлять publish без md)
+- после копирования `package_outputs.py` **удаляет stale-файлы** в `*-publish/`, которых нет в текущем packaged set (иначе clip_02…N остаются от прошлого прогона при packaging только clip_01)
 
 ## Команда
 

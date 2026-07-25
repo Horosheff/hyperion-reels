@@ -18,6 +18,30 @@ from agent_gate import agent_mode_enabled, evaluate_agent_decisions, gate_messag
 configure_stdio()
 
 
+def _prune_stale_publish_files(publish: Path, keep: set[str]) -> list[str]:
+    """Remove files left from previous packaging runs that are not in the current set.
+
+    Publish dir is reused across runs (same stem); without pruning, packaging only
+    clip_01 leaves clip_02..N from a prior run on disk even when manifest has one clip.
+    """
+    removed: list[str] = []
+    if not publish.is_dir():
+        return removed
+    keep_normalized = {Path(name).name for name in keep if name}
+    keep_normalized.add("publish-manifest.json")
+    for path in publish.iterdir():
+        if not path.is_file():
+            continue
+        if path.name in keep_normalized:
+            continue
+        try:
+            path.unlink()
+            removed.append(path.name)
+        except OSError as exc:
+            print(f"[warn] could not remove stale publish file {path.name}: {exc}", file=sys.stderr)
+    return removed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="VideoShorts: package clips + subtitle sidecars")
     parser.add_argument("clips_dir", type=Path)
@@ -186,6 +210,7 @@ def main() -> None:
     } if isinstance(retry_plan, dict) else {}
 
     packaged = []
+    keep_names: set[str] = set()
     for clip in manifest.get("clips", []):
         final_name = str(clip.get("final_file") or "")
         cropped_name = str(clip.get("cropped_file") or clip.get("file") or "")
@@ -195,6 +220,7 @@ def main() -> None:
             continue
         dest_mp4 = publish / fname
         shutil.copy2(mp4, dest_mp4)
+        keep_names.add(fname)
         entry = {
             "file": fname,
             "source_file": cropped_name,
@@ -224,6 +250,7 @@ def main() -> None:
                 dest_sub = publish / side.name
                 shutil.copy2(side, dest_sub)
                 entry[ext.lstrip(".")] = side.name
+                keep_names.add(side.name)
         metadata = metadata_by_index.get(str(int(idx)) if idx.isdigit() else idx) or {}
         meta_dir = src / "metadata"
         json_name = metadata.get("json") if metadata else None
@@ -242,6 +269,7 @@ def main() -> None:
             if name and (meta_dir / str(name)).is_file():
                 shutil.copy2(meta_dir / str(name), publish / str(name))
                 entry[key] = str(name)
+                keep_names.add(str(name))
         if metadata:
             entry["metadata"] = {
                 "title": metadata.get("title"),
@@ -273,8 +301,12 @@ def main() -> None:
         "note": "MP4 берутся финальные clip_XX.mp4, если burn был выполнен; иначе fallback на clip_XX_cropped.mp4. Sidecar ASS/SRT рядом для ручной загрузки в YouTube Studio / Reels.",
     }
     (publish / "publish-manifest.json").write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    keep_names.add("publish-manifest.json")
+    removed = _prune_stale_publish_files(publish, keep_names)
     latest_path = write_latest_results(src, publish_dir=publish, status="PASS")
     print(f"✅ Packaged {len(packaged)} clip(s) → {publish}")
+    if removed:
+        print(f"   Pruned {len(removed)} stale file(s): {', '.join(removed[:12])}{'…' if len(removed) > 12 else ''}")
     print(f"   Latest results: {latest_path}")
 
 

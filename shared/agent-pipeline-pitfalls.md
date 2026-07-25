@@ -12,6 +12,8 @@
 
 - **Пустая транскрипция на длинном вебинаре:** проверить VAD coverage в логе; `beam_size=1` быстрее, для качества — 5.
 
+- **`ValueError: 'auto' is not a valid language code`:** brief/UI `language=auto` нельзя передавать в faster-whisper как код. Нужен `language=None` (omit `--language` / unset `VIDEOSHORTS_WHISPER_LANGUAGE`). Worker/transcribe.py/run_pipeline нормализуют `auto`/`detect`/`none`/пустую строку → autodetect.
+
 
 
 ## Субтитры
@@ -24,7 +26,15 @@
 
 - **Путаница clip_XX vs clip_XX_cropped:** cutter пишет `_cropped`; burner → финальный `clip_XX.mp4`; QA смотрит финальные.
 
+- **Subtitle writer на stem-moments после refiner:** после boundary-refiner / cutter bounds живут в `moments/refined-moments.json`. `write_subtitles.py` предпочитает refined; skill default — refined path. Stem `<stem>-moments.json` даёт stale start/end → сломанный remap (8/10 клипов).
+
+- **Частичный re-cut затирает чужие субтитры:** после retry используй `write_subtitles.py --only-indexes 1,2,5` — preserve ASS/SRT + manifest для остальных KEEP.
+
+- **Packager stale `*-publish/`:** каталог переиспользуется; без prune остаются clip_02…N от прошлого прогона. `package_outputs.py` удаляет файлы вне текущего packaged set.
+
 - **Packager взял клип без субтитров:** `publish-manifest.json` должен указывать `burned: true`, если есть `clip_XX.mp4`. Fallback на `_cropped` допустим только при `--no-burn`.
+
+- **jump_cuts с `from`/`to` не резались:** cutter читает и `start`/`end`, и `from`/`to` (montage jump_cuts). Без alias silence/filler ок, а jump_cuts молча пропускались.
 
 - **Custom template не применился:** использовать `--template-json path\template.json` или `VIDEOSHORTS_SUBTITLES_TEMPLATE_JSON`; JSON поддерживает camelCase поля из `shorts_service` (`fontSize`, `primaryColor`, `wordsPerLine`).
 
@@ -45,6 +55,8 @@
 - **Алгоритм не должен быть финальным редактором:** `find_moments.py`/`clip_selector` — только генератор кандидатов. Финальный `moments.json` утверждает `videoshorts-moment-finder` по транскрипту: законченная микротема, понятный вход, payoff/вывод, длительность **строго из brief `min_sec`–`max_sec`** (не хардкод 30–60). Если brief `30–90`, а все клипы снова 43–55 сек или все кандидаты одной длины (например 75×N) — агент игнорирует Duration policy: нужен spread short/mid/long и long-окна до `max_sec`.
 
 - **Guardian QA min/max:** `qa_clips.py --min/--max` брать из brief. Хардкод `--max 60` при brief `max_sec=90` ложно валит длинные клипы.
+
+- **Raw window ≥ min_sec, финал короче:** jump cuts / silence_remove укорачивают MP4. Boundary + montage обязаны гейтить `estimated_duration_after_cleanup` (≥ `brief.min_sec − 2`), не только raw `duration`. Иначе Guardian валит 7/10 «out of range». `validate_agent_artifacts` refined-moments / montage-plan проверяет поле; heuristic `refine_boundaries` / `montage_plan` expand или REJECT/REVIEW.
 
 - **Пунктуация не равна завершённой теме:** хвосты `Второе.`, `Первое.`, `Дальше.`, `Сейчас объясню`, `Сейчас покажу`, `Так.` не являются payoff. Такой клип надо расширить/сдвинуть или заменить до cutter.
 
@@ -73,6 +85,8 @@
 - **Строго последовательный run без волн:** замедляет пайплайн. Обязательны Wave C/H из slim orchestrator.
 
 - **Вызов legacy Task в slim P0:** scorekeeper / virality / dramaturg / montage-planner / audio-polisher / post-render-reviewer — лишние минуты. Их работа в editor / boundary / cutter / guardian.
+
+- **`jump_cuts` с `from`/`to` не резались:** montage-plan пишет jump cuts как `from`/`to`, а `cut_clips.py` раньше читал только `start`/`end` → silent skip всех jump cuts. Fix: принимать оба варианта ключей; после фикса перерезать KEEP.
 
 - **Ложный OPEN_INCIDENTS:** (1) regex `incident_report:\s*(?!none\b).+` из‑за backtracking матчит `none`; (2) упоминание `incident_report:` внутри prose durable_fix тоже триггерит. В `scripts/incident_queue.py` считать только field-строки `(?m)^(?:\s*[-*]\s*)?incident_report:\s*(\S+)` и value != `none`; `status: open` — только целая строка.
 

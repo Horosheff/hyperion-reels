@@ -14,15 +14,28 @@
 
 cd scripts
 
+# После boundary-refiner / cutter — ВСЕГДА refined-moments.json (не stem-moments)
 python write_subtitles.py ../videoshorts-memory/transcripts/<stem>/transcript.json \
 
-  ../videoshorts-memory/moments/<stem>-moments.json \
+  ../videoshorts-memory/moments/refined-moments.json \
 
   -o ../videoshorts-memory/output/clips/<stem>/ \
 
   -t mrbeast --format both
 
+# После retry / частичного re-cut — только затронутые индексы (остальные ASS/SRT + manifest preserve)
+python write_subtitles.py ../videoshorts-memory/transcripts/<stem>/transcript.json \
+  ../videoshorts-memory/moments/refined-moments.json \
+  -o ../videoshorts-memory/output/clips/<stem>/ \
+  -t mrbeast --format both --only-indexes 1,2,3,5,8,9,10
+
 ```
+
+
+
+`write_subtitles.py` **предпочитает** `moments/refined-moments.json`, если он есть рядом с переданным `<stem>-moments.json` или если передан каталог `moments/`. Stem-moments после refiner устаревают: remap по старым start/end ломает таймлайн субтитров (INC-20260725-2038).
+
+`--only-indexes` — частичная регенерация после re-cut (INC-20260725-2100): не затирает субтитры APPROVE-клипов.
 
 
 
@@ -81,5 +94,3 @@ Custom JSON как в `shorts_service`: `--template-json path/to/template.json`.
 
 
 Обязателен.
-
-
