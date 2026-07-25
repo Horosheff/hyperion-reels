@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -253,9 +254,9 @@ def build_command(video_path: Path, settings: dict) -> list[str]:
         "-c",
         str(settings.get("clips") or 10),
         "--min",
-        str(settings.get("minSec") or 30),
+        str(settings.get("minSec") or 60),
         "--max",
-        str(settings.get("maxSec") or 60),
+        str(settings.get("maxSec") or 120),
         "-m",
         str(settings.get("model") or "base"),
         "--template",
@@ -323,8 +324,8 @@ def write_brief(video_path: Path, settings: dict, command: list[str], log_path: 
         f"run_mode: {run_mode}",
         f"video_path: {video_path}",
         f"clip_count: {settings.get('clips', 10)}",
-        f"min_sec: {settings.get('minSec', 30)}",
-        f"max_sec: {settings.get('maxSec', 60)}",
+        f"min_sec: {settings.get('minSec', 60)}",
+        f"max_sec: {settings.get('maxSec', 120)}",
         f"whisper_model: {settings.get('model', 'base')}",
         f"language: {settings.get('language') or 'auto'}",
         f"subtitle_template: {settings.get('template', 'mrbeast')}",
@@ -604,6 +605,43 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
+
+        if path in {"/api/vk-status", "/api/rutube-status", "/api/tiktok-status"}:
+            query = parse_qs(parsed.query)
+            raw_path = query.get("clips_dir", [""])[0]
+            clips_dir = None
+            if raw_path:
+                clips_dir = Path(raw_path).expanduser()
+                if clips_dir.is_dir():
+                    try:
+                        clips_dir.resolve().relative_to(PLUGIN_ROOT.resolve())
+                    except ValueError:
+                        json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
+                        return
+                else:
+                    clips_dir = None
+            if str(SCRIPTS_DIR) not in sys.path:
+                sys.path.insert(0, str(SCRIPTS_DIR))
+            try:
+                if path == "/api/vk-status":
+                    from publish_vk import status_payload as _status
+                    json_response(self, _status(clips_dir))
+                elif path == "/api/rutube-status":
+                    from publish_rutube import status_payload as _status
+                    json_response(self, _status(clips_dir))
+                else:
+                    from publish_tiktok import resolve_config as _tt_cfg
+                    cfg = _tt_cfg()
+                    json_response(self, {
+                        "ok": True,
+                        "has_cookies": bool(cfg.get("has_cookies")),
+                        "client_ok": bool(cfg.get("client_ok")),
+                        "storage": str(cfg.get("storage") or ""),
+                        "visibility": cfg.get("visibility") or "Everyone",
+                    })
+            except Exception as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=500)
+            return
         if path == "/api/media":
             query = parse_qs(parsed.query)
             raw_path = query.get("path", [""])[0]
@@ -672,7 +710,14 @@ class Handler(BaseHTTPRequestHandler):
                     encoding="utf-8",
                 )
                 covers = subprocess.run(
-                    [sys.executable, str(SCRIPTS_DIR / "prepare_covers.py"), str(resolved), "--mode", "auto"],
+                    [
+                        sys.executable,
+                        str(SCRIPTS_DIR / "prepare_covers.py"),
+                        str(resolved),
+                        "--mode",
+                        "kie",
+                        "--force-upload",
+                    ],
                     cwd=str(SCRIPTS_DIR),
                     capture_output=True,
                     text=True,
@@ -763,6 +808,75 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
+        if path in {"/api/vk-login", "/api/rutube-login", "/api/tiktok-login"}:
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                raw = self.rfile.read(length) if length else b"{}"
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                clips_dir = Path(str(payload.get("clips_dir") or "")).expanduser() if payload.get("clips_dir") else None
+                resolved = None
+                if clips_dir and clips_dir.is_dir():
+                    resolved = clips_dir.resolve()
+                    try:
+                        resolved.relative_to(PLUGIN_ROOT.resolve())
+                    except ValueError:
+                        json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
+                        return
+                script_map = {
+                    "/api/vk-login": "publish_vk.py",
+                    "/api/rutube-login": "publish_rutube.py",
+                    "/api/tiktok-login": "publish_tiktok.py",
+                }
+                label_map = {
+                    "/api/vk-login": "vk",
+                    "/api/rutube-login": "rutube",
+                    "/api/tiktok-login": "tiktok",
+                }
+                script = script_map[path]
+                label = label_map[path]
+                cmd = [sys.executable, str(SCRIPTS_DIR / script), "--login-only"]
+                if resolved is not None:
+                    cmd.insert(2, str(resolved))
+                proc = subprocess.run(
+                    cmd,
+                    cwd=str(SCRIPTS_DIR),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                if str(SCRIPTS_DIR) not in sys.path:
+                    sys.path.insert(0, str(SCRIPTS_DIR))
+                status: dict = {"ok": proc.returncode == 0}
+                try:
+                    if path == "/api/vk-login":
+                        from publish_vk import status_payload
+                        status = status_payload(resolved)
+                    elif path == "/api/rutube-login":
+                        from publish_rutube import status_payload
+                        status = status_payload(resolved)
+                    else:
+                        from publish_tiktok import resolve_config as _tt_cfg
+                        cfg = _tt_cfg()
+                        status = {
+                            "ok": True,
+                            "has_cookies": bool(cfg.get("has_cookies")),
+                            "client_ok": bool(cfg.get("client_ok")),
+                            "storage": str(cfg.get("storage") or ""),
+                        }
+                except Exception as status_exc:
+                    status = {"ok": False, "error": str(status_exc)}
+                json_response(self, {
+                    "ok": proc.returncode == 0,
+                    "platform": label,
+                    "stdout": proc.stdout,
+                    "stderr": proc.stderr,
+                    "error": None if proc.returncode == 0 else (proc.stderr or proc.stdout or f"{label} login failed"),
+                    **status,
+                }, status=200 if proc.returncode == 0 else 500)
+            except Exception as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=500)
+            return
         if path == "/api/publish-dzen":
             try:
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -826,6 +940,166 @@ class Handler(BaseHTTPRequestHandler):
                     "stderr": proc.stderr,
                     "error": None if proc.returncode == 0 else (proc.stderr or proc.stdout or "dzen publish failed"),
                 }, status=200 if proc.returncode == 0 else 500)
+            except Exception as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=500)
+            return
+
+        if path in {
+            "/api/publish-vk",
+            "/api/publish-rutube",
+            "/api/publish-tiktok",
+            "/api/publish-platforms",
+        }:
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                raw = self.rfile.read(length) if length else b"{}"
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                clips_dir = Path(str(payload.get("clips_dir") or "")).expanduser()
+                index = payload.get("index")
+                draft = bool(payload.get("draft"))
+                if not clips_dir.is_dir():
+                    json_response(self, {"ok": False, "error": f"clips_dir not found: {clips_dir}"}, status=400)
+                    return
+                resolved = clips_dir.resolve()
+                try:
+                    resolved.relative_to(PLUGIN_ROOT.resolve())
+                except ValueError:
+                    json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
+                    return
+                try:
+                    index = int(index)
+                except (TypeError, ValueError):
+                    json_response(self, {"ok": False, "error": "index required"}, status=400)
+                    return
+
+                script_by_platform = {
+                    "zen": "publish_dzen.py",
+                    "dzen": "publish_dzen.py",
+                    "vk": "publish_vk.py",
+                    "rutube": "publish_rutube.py",
+                    "tiktok": "publish_tiktok.py",
+                }
+                log_by_platform = {
+                    "zen": "dzen-publish-log.json",
+                    "dzen": "dzen-publish-log.json",
+                    "vk": "vk-publish-log.json",
+                    "rutube": "rutube-publish-log.json",
+                    "tiktok": "tiktok-publish-log.json",
+                }
+
+                if path == "/api/publish-platforms":
+                    raw_platforms = payload.get("platforms") or []
+                    if isinstance(raw_platforms, str):
+                        raw_platforms = [p.strip() for p in raw_platforms.replace(";", ",").split(",")]
+                    platforms = []
+                    for p in raw_platforms:
+                        key = str(p).strip().lower()
+                        if key == "dzen":
+                            key = "zen"
+                        if key in script_by_platform and key not in platforms:
+                            platforms.append(key)
+                    platforms = [p for p in platforms if p in {"zen", "vk", "rutube", "tiktok"}]
+                else:
+                    platforms = [{
+                        "/api/publish-vk": "vk",
+                        "/api/publish-rutube": "rutube",
+                        "/api/publish-tiktok": "tiktok",
+                    }[path]]
+
+                if not platforms:
+                    json_response(
+                        self,
+                        {"ok": False, "error": "Нет отмеченных платформ (Дзен / VK / RuTube / TikTok)"},
+                        status=400,
+                    )
+                    return
+
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                def _run_one(platform: str) -> dict:
+                    script = SCRIPTS_DIR / script_by_platform[platform]
+                    if not script.is_file():
+                        return {
+                            "platform": platform,
+                            "ok": False,
+                            "error": f"script missing: {script.name}",
+                        }
+                    cmd = [
+                        sys.executable,
+                        str(script),
+                        str(resolved),
+                        "--index",
+                        str(index),
+                    ]
+                    if draft and platform in {"zen", "tiktok"}:
+                        cmd.append("--draft")
+                    proc = subprocess.run(
+                        cmd,
+                        cwd=str(SCRIPTS_DIR),
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                    )
+                    log_path = resolved / log_by_platform[platform]
+                    log_data = {}
+                    if log_path.is_file():
+                        try:
+                            log_data = json.loads(log_path.read_text(encoding="utf-8-sig"))
+                        except Exception:
+                            log_data = {}
+                    ok = proc.returncode == 0
+                    return {
+                        "platform": platform,
+                        "ok": ok,
+                        "returncode": proc.returncode,
+                        "log": log_data,
+                        "stdout": (proc.stdout or "")[-4000:],
+                        "stderr": (proc.stderr or "")[-4000:],
+                        "error": None if ok else (proc.stderr or proc.stdout or f"{platform} publish failed"),
+                    }
+
+                # Параллельно: все отмеченные платформы открывают браузеры одновременно
+                results_by_platform: dict[str, dict] = {}
+                workers = max(1, min(len(platforms), 4))
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    futures = {pool.submit(_run_one, p): p for p in platforms}
+                    for fut in as_completed(futures):
+                        platform = futures[fut]
+                        try:
+                            results_by_platform[platform] = fut.result()
+                        except Exception as exc:
+                            results_by_platform[platform] = {
+                                "platform": platform,
+                                "ok": False,
+                                "error": str(exc),
+                            }
+
+                results = [results_by_platform[p] for p in platforms]
+                all_ok = all(bool(r.get("ok")) for r in results)
+
+                try:
+                    from videoshorts_core import write_latest_results
+                    if all_ok:
+                        write_latest_results(resolved, status="PASS")
+                except Exception:
+                    pass
+
+                json_response(
+                    self,
+                    {
+                        "ok": all_ok,
+                        "index": index,
+                        "draft": draft,
+                        "platforms": platforms,
+                        "parallel": True,
+                        "results": results,
+                        "error": None if all_ok else "; ".join(
+                            f"{r['platform']}: {r.get('error')}" for r in results if not r.get("ok")
+                        ),
+                    },
+                    status=200 if all_ok else 500,
+                )
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return

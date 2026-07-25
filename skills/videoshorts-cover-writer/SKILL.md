@@ -46,10 +46,14 @@ videoshorts-memory/brand/covers/
 
 ```bash
 cd scripts
-python prepare_covers.py "../videoshorts-memory/output/clips/<stem>" --mode kie
+python prepare_covers.py "../videoshorts-memory/output/clips/<stem>" --mode kie --force-upload
 ```
 
-`auto` (default): Kie если есть ключ + avatar, иначе ffmpeg-кадр.
+UI Results вызывает то же: `--mode kie --force-upload`.
+
+`auto` (default CLI): Kie если есть ключ + **локальный** `avatar.png`, иначе ffmpeg-кадр.
+
+**Важно:** без локального `avatar.png` remote `brand-urls.json` (mayai.ru) часто даёт `400 Image fetch failed`. Скрипт грузит brand kit через Kie File Upload API. `ffmpeg_fallback` по умолчанию **не** считается успехом (нужен `--allow-ffmpeg-fallback`).
 
 ## Промпт (что делает скрипт)
 

@@ -80,7 +80,7 @@
 
 
 
-- **`400 Image fetch failed` / 3× «обложка отвалилась»:** `brand-urls.json` на mayai.ru с ПК открывается, но **Kie cloud не может fetch**. Нужен File Upload API: локальный `avatar.png` + refs → `tempfile.redpandaai.co`. `prepare_covers` предпочитает local upload; remote URLs — только без локального avatar. Иначе silent `ffmpeg_fallback` и UI думает, что AI-обложка готова.
+- **`400 Image fetch failed` / 3× «обложка отвалилась»:** `brand-urls.json` на mayai.ru с ПК открывается, но **Kie cloud не может fetch**. Нужен File Upload API: локальный `avatar.png` + refs → `tempfile.redpandaai.co`. `prepare_covers` / UI (`--mode kie --force-upload`) всегда заливают локальный brand; remote URLs alone запрещены как единственный путь. `ffmpeg_fallback` больше не маскирует ошибку как SUCCESS (нужен явный `--allow-ffmpeg-fallback`).
 
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -202,21 +203,35 @@ def _upload_brand_to_kie_cdn(
     return {"avatar_url": avatar_url, "refs": ref_urls, "source": "local-upload"}
 
 
-def ensure_cdn_urls(client: KieClient, brand_dir: Path, avatar: Path | None, refs: list[Path]) -> dict:
+def ensure_cdn_urls(
+    client: KieClient,
+    brand_dir: Path,
+    avatar: Path | None,
+    refs: list[Path],
+    *,
+    force: bool = False,
+) -> dict:
     """Resolve HTTPS input_urls for Kie i2i.
 
-    Prefer **local File Upload API** when avatar.png exists. Third-party hosts in
-    brand-urls.json (e.g. mayai.ru) often return 200 for the user but Kie cloud
-    gets ``400 Image fetch failed`` — then covers silently fall back to ffmpeg.
-    Remote brand-urls are only used when no local avatar is available.
+    Always prefer **local File Upload API** when avatar.png exists. Third-party hosts
+    in brand-urls.json (mayai.ru) often return 200 for the user but Kie cloud gets
+    ``400 Image fetch failed``. Remote brand-urls only when no local avatar.
     """
     if avatar is not None and avatar.is_file():
-        print(f"   brand kit → Kie File Upload API (avatar + {len(refs)} refs)")
-        return _upload_brand_to_kie_cdn(client, brand_dir, avatar, refs)
+        print(
+            f"   brand kit → Kie File Upload API "
+            f"(avatar + {len(refs)} refs{', force' if force else ''})"
+        )
+        return _upload_brand_to_kie_cdn(client, brand_dir, avatar, refs, force=force)
 
     remote = _brand_urls_from_remote(brand_dir)
     if remote:
         print(f"   brand-urls.json → avatar + {len(remote['refs'])} refs (HTTPS, no local avatar)")
+        print(
+            "   [WARN] без локального avatar.png Kie может дать Image fetch failed — "
+            "положите avatar.png в brand/covers/",
+            file=sys.stderr,
+        )
         return remote
 
     raise KieApiError("Нет avatar.png и нет brand-urls.json с avatar_url")
@@ -227,6 +242,15 @@ def _is_image_fetch_failed(error: str | None) -> bool:
         return False
     low = error.lower()
     return "image fetch failed" in low or "file upload api" in low
+
+
+def _kie_urls_look_hosted(cdn: dict) -> bool:
+    """True when URLs look like Kie/tempfile CDN (not third-party site)."""
+    avatar = str(cdn.get("avatar_url") or "")
+    if not avatar.startswith("http"):
+        return False
+    host = avatar.lower()
+    return any(token in host for token in ("redpandaai", "kieai", "kie.ai", "tempfile"))
 
 
 def generate_ai_cover(
@@ -254,6 +278,63 @@ def generate_ai_cover(
         return False, None, str(exc)
 
 
+def _generate_with_cdn_retries(
+    client: KieClient,
+    *,
+    brand_dir: Path,
+    avatar: Path | None,
+    refs: list[Path],
+    cdn: dict,
+    prompt: str,
+    index: int,
+    resolution: str,
+    output: Path,
+) -> tuple[bool, str | None, str | None, dict, dict | None]:
+    """Try Kie i2i; on Image fetch failed force re-upload local brand and retry (max 2)."""
+    current_cdn = cdn
+    ref = None
+    cdn_refs = current_cdn.get("refs") if isinstance(current_cdn.get("refs"), list) else []
+    if cdn_refs:
+        ref = cdn_refs[(index - 1) % len(cdn_refs)]
+
+    success, task_id, error = generate_ai_cover(
+        client,
+        prompt=prompt,
+        avatar_url=str(current_cdn["avatar_url"]),
+        ref_url=(ref or {}).get("url") if isinstance(ref, dict) else None,
+        output=output,
+        resolution=resolution,
+    )
+    if success:
+        return True, task_id, None, current_cdn, ref
+
+    # Retry path: always re-upload local kit when fetch fails (even if already "local-upload"
+    # — CDN URLs can expire / go stale).
+    if avatar is not None and avatar.is_file() and _is_image_fetch_failed(error):
+        for attempt in (1, 2):
+            print(
+                f"   [WARN] clip_{index:02d} Image fetch failed → "
+                f"force re-upload brand to Kie CDN (try {attempt}/2)"
+            )
+            current_cdn = _upload_brand_to_kie_cdn(
+                client, brand_dir, avatar, refs, force=True
+            )
+            cdn_refs = current_cdn.get("refs") if isinstance(current_cdn.get("refs"), list) else []
+            ref = cdn_refs[(index - 1) % len(cdn_refs)] if cdn_refs else None
+            success, task_id, error = generate_ai_cover(
+                client,
+                prompt=prompt,
+                avatar_url=str(current_cdn["avatar_url"]),
+                ref_url=(ref or {}).get("url") if isinstance(ref, dict) else None,
+                output=output,
+                resolution=resolution,
+            )
+            if success:
+                return True, task_id, None, current_cdn, ref
+
+    return False, task_id, error, current_cdn, ref
+
+
 def _write_progress(clips_dir: Path, payload: dict) -> None:
     path = clips_dir / "covers-progress.json"
     payload = {
@@ -276,6 +357,16 @@ def main() -> None:
     parser.add_argument("--brand-dir", type=Path, default=DEFAULT_BRAND_DIR)
     parser.add_argument("--resolution", default="1K", choices=["1K", "2K", "4K"])
     parser.add_argument("--skip-existing", action="store_true", help="Не перегенерировать уже готовые cover.jpg")
+    parser.add_argument(
+        "--allow-ffmpeg-fallback",
+        action="store_true",
+        help="Если Kie упал — считать ffmpeg-кадр успехом (по умолчанию НЕТ: для UI это ошибка)",
+    )
+    parser.add_argument(
+        "--force-upload",
+        action="store_true",
+        help="Всегда заново залить avatar/refs на Kie CDN (игнор cdn-cache)",
+    )
     args = parser.parse_args()
 
     clips_dir = args.clips_dir
@@ -302,9 +393,20 @@ def main() -> None:
     has_remote_avatar = isinstance(remote_brand.get("avatar_url"), str) and str(remote_brand["avatar_url"]).startswith("http")
     api_key = load_api_key(PLUGIN_ROOT)
     use_kie = args.mode == "kie" or (args.mode == "auto" and bool(api_key) and (avatar is not None or has_remote_avatar))
-    if args.mode == "kie" and (not api_key or (avatar is None and not has_remote_avatar)):
-        print("[ERROR] --mode kie требует KIE_API_KEY и avatar (файл или brand-urls.json)", file=sys.stderr)
+    if args.mode == "kie" and not api_key:
+        print("[ERROR] --mode kie требует KIE_API_KEY в videoshorts.local.env", file=sys.stderr)
         sys.exit(3)
+    if use_kie and avatar is None:
+        print(
+            "[ERROR] Для стабильных AI-обложек нужен локальный "
+            f"{brand_dir / 'avatar.png'} (Kie File Upload API). "
+            "Remote brand-urls.json alone часто даёт Image fetch failed.",
+            file=sys.stderr,
+        )
+        if args.mode == "kie":
+            sys.exit(3)
+        use_kie = False
+        print("[WARN] падаю на ffmpeg-кадры (нет avatar.png)", file=sys.stderr)
 
     client: KieClient | None = None
     cdn: dict = {}
@@ -312,7 +414,13 @@ def main() -> None:
         assert api_key
         client = KieClient(api_key)
         print(f"🎨 AI covers (Kie gpt-image-2 i2i 9:16), local_refs={len(refs)}")
-        cdn = ensure_cdn_urls(client, brand_dir, avatar, refs)
+        force_upload = bool(args.force_upload) or (
+            os.environ.get("VIDEOSHORTS_COVERS_FORCE_UPLOAD", "").strip() in {"1", "true", "yes"}
+        )
+        cdn = ensure_cdn_urls(client, brand_dir, avatar, refs, force=force_upload)
+        if avatar is not None and not _kie_urls_look_hosted(cdn):
+            print("   [WARN] CDN URL не похож на Kie tempfile → force re-upload")
+            cdn = ensure_cdn_urls(client, brand_dir, avatar, refs, force=True)
 
     covers_dir = clips_dir / "covers"
     covers_dir.mkdir(parents=True, exist_ok=True)
@@ -401,45 +509,39 @@ def main() -> None:
         error = None
         task_id = None
         if use_kie and client is not None:
-            success, task_id, error = generate_ai_cover(
+            success, task_id, error, cdn, ref = _generate_with_cdn_retries(
                 client,
+                brand_dir=brand_dir,
+                avatar=avatar,
+                refs=refs,
+                cdn=cdn,
                 prompt=prompt,
-                avatar_url=str(cdn["avatar_url"]),
-                ref_url=(ref or {}).get("url") if isinstance(ref, dict) else None,
-                output=cover_path,
+                index=index,
                 resolution=args.resolution,
+                output=cover_path,
             )
             entry["kie_task_id"] = task_id
-            # mayai.ru (and similar) often fail on Kie side → re-upload local brand to Kie CDN once
-            if (
-                not success
-                and _is_image_fetch_failed(error)
-                and avatar is not None
-                and avatar.is_file()
-                and cdn.get("source") != "local-upload"
-            ):
-                print(f"   [WARN] clip_{index:02d} Image fetch failed → re-upload brand to Kie CDN")
-                cdn = _upload_brand_to_kie_cdn(client, brand_dir, avatar, refs, force=True)
-                cdn_refs = cdn.get("refs") if isinstance(cdn.get("refs"), list) else []
-                if cdn_refs:
-                    ref = cdn_refs[(index - 1) % len(cdn_refs)]
-                    style_name = str((ref or {}).get("name") or style_name)
-                    entry["style_ref"] = style_name
-                success, task_id, error = generate_ai_cover(
-                    client,
-                    prompt=prompt,
-                    avatar_url=str(cdn["avatar_url"]),
-                    ref_url=(ref or {}).get("url") if isinstance(ref, dict) else None,
-                    output=cover_path,
-                    resolution=args.resolution,
-                )
-                entry["kie_task_id"] = task_id
-                entry["cdn_retry"] = "local-upload"
-            if not success and video:
+            if isinstance(ref, dict) and ref.get("name"):
+                entry["style_ref"] = str(ref.get("name"))
+                style_name = entry["style_ref"]
+            if success:
+                entry["mode"] = "kie"
+                entry["cdn_source"] = cdn.get("source")
+            elif video and args.allow_ffmpeg_fallback:
                 print(f"   [WARN] clip_{index:02d} Kie fail → ffmpeg fallback ({error})")
                 success = extract_cover(video, cover_path, at_sec=args.at_sec)
                 entry["mode"] = "ffmpeg_fallback"
                 entry["error"] = error
+            else:
+                # Не маскируем Image fetch failed «успешным» кадром из видео —
+                # UI должен показать ошибку, а не фейковую обложку.
+                entry["mode"] = "kie_failed"
+                entry["error"] = error or "kie_generate_failed"
+                print(
+                    f"   [ERROR] clip_{index:02d} Kie fail без ffmpeg-маски "
+                    f"({entry['error']})",
+                    file=sys.stderr,
+                )
         elif video:
             success = extract_cover(video, cover_path, at_sec=args.at_sec)
         else:
@@ -513,7 +615,11 @@ def main() -> None:
     })
     print(f"✅ Covers: {ok}/{len(selected)} → {covers_dir}")
     print(f"   Manifest: {manifest_path}")
-    if ok == 0:
+    kie_failed = sum(1 for e in entries if e.get("mode") == "kie_failed")
+    ffmpeg_masked = sum(1 for e in entries if e.get("mode") == "ffmpeg_fallback")
+    if ok == 0 or kie_failed:
+        sys.exit(1)
+    if use_kie and ffmpeg_masked and not args.allow_ffmpeg_fallback:
         sys.exit(1)
 
 
