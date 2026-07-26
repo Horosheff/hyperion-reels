@@ -14,7 +14,7 @@ if (-not (Test-Path $server)) {
 
 try {
   Invoke-WebRequest -Uri ($url + "api/status") -UseBasicParsing -TimeoutSec 1 | Out-Null
-  Invoke-WebRequest -Uri ($url + "api/new-session") -UseBasicParsing -TimeoutSec 2 | Out-Null
+  # Server already running: just open UI. Do NOT reset session (new-session wiped uploads).
   Start-Process $url
   exit 0
 } catch {
@@ -30,8 +30,16 @@ $handoffDir = Join-Path $here ".cursor"
 $handoff = Join-Path $handoffDir "videoshorts-handoff.md"
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 New-Item -ItemType Directory -Path $handoffDir -Force | Out-Null
+
+# Fresh server start only: clear stale run-request, keep existing brief/clips if READY.
 if (Test-Path $runRequest) { Remove-Item $runRequest -Force }
 $createdAt = (Get-Date).ToString("s")
+$keepBrief = $false
+if (Test-Path $brief) {
+  $briefText = Get-Content $brief -Raw -ErrorAction SilentlyContinue
+  if ($briefText -match "READY_FOR_AGENT|RUNNING|DONE|PASS") { $keepBrief = $true }
+}
+if (-not $keepBrief) {
 @"
 {
   "status": "WAITING_FOR_UPLOAD",
@@ -54,5 +62,6 @@ video_path: (not selected)
 status: WAITING_FOR_UPLOAD
 director_action: ждать новый READY_FOR_AGENT из UI, не использовать старые run-request/latest-results
 "@ | Set-Content -Path $handoff -Encoding UTF8
+}
 
 Start-Process -FilePath "python" -ArgumentList @("`"$server`"", "--open") -WorkingDirectory $here

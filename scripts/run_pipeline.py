@@ -77,9 +77,9 @@ def main() -> None:
     parser.add_argument("--profile", default=None, choices=["webinar", "sales", "education", "podcast"], help="Профиль публикационных метаданных (по умолчанию из --layout)")
     parser.add_argument(
         "--layout",
-        default="regular",
+        default="webinar",
         choices=["regular", "webinar", "podcast", "sales"],
-        help="Режим кадра: regular / webinar / podcast(tracking) / sales",
+        help="Режим кадра: webinar (default 30/70) / regular / podcast(tracking) / sales",
     )
 
     parser.add_argument("--template-json", type=Path, default=None, help="Custom JSON subtitle template")

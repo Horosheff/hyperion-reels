@@ -109,8 +109,11 @@ class VkVideoClient:
             "true",
             "yes",
         }
-        # Человекоподобные паузы (сек). VK_HUMANIZE=0 — минимум.
-        self.humanize = os.getenv("VK_HUMANIZE", "1").lower() not in {"0", "false", "no"}
+        # Человекоподобные паузы. HUMANIZE=0 / VK_HUMANIZE=0 — минимум.
+        from browser_humanize import make_humanize
+
+        self.hz = make_humanize(lambda: self.page, "VK_HUMANIZE", "HUMANIZE", name="vk")
+        self.humanize = self.hz.enabled
 
         self.playwright = None
         self.browser = None
@@ -119,37 +122,16 @@ class VkVideoClient:
 
     async def _human_pause(self, lo: float = 0.7, hi: float = 1.8) -> None:
         """Случайная пауза между действиями — меньше «робот-паттерна»."""
-        if not self.humanize:
-            await asyncio.sleep(0.15)
-            return
-        await asyncio.sleep(random.uniform(lo, hi))
+        await self.hz.pause(lo, hi)
 
     async def _human_click(self, locator, *, timeout: int = 8000) -> None:
         """Hover → короткая пауза → click (не мгновенный клик)."""
-        target = locator.first if hasattr(locator, "first") else locator
-        try:
-            await target.scroll_into_view_if_needed(timeout=timeout)
-        except Exception:
-            pass
-        await self._human_pause(0.35, 0.9)
-        try:
-            await target.hover(timeout=timeout)
-            await self._human_pause(0.2, 0.55)
-        except Exception:
-            pass
-        await target.click(timeout=timeout)
+        await self.hz.click(locator, timeout=timeout)
 
     async def _human_type(self, locator, text: str) -> None:
         """Печать текста с задержкой вместо мгновенного fill."""
-        target = locator.first if hasattr(locator, "first") else locator
-        await self._human_click(target)
-        await self._human_pause(0.25, 0.6)
-        try:
-            await target.fill("")
-        except Exception:
-            pass
-        delay = random.randint(18, 42) if self.humanize else 0
-        await target.type(text, delay=delay)
+        await self.hz.type_text(locator, text)
+
     async def start(self) -> None:
         from playwright.async_api import async_playwright
 

@@ -20,6 +20,7 @@ ALLOWED_PLATFORMS = {
     "telegram",
     "vk",
     "zen",
+    "rutube",
 }
 
 

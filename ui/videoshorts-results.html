@@ -923,15 +923,26 @@
     function coverBlock(clip) {
       const url = coverUrl(clip);
       const idx = clip.index;
-      const published = !!(clip.zen_published || clip.dzen_published || clip.publish_zen_ok);
-      const zenBtn = clip.cover_ready
-        ? (published
-          ? `<div class="publish-ok-badge" data-zen-ok="${esc(idx)}"><span class="dot"></span>Опубликовано в Дзен</div>`
-          : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-            <button type="button" class="btn-blue" data-publish-zen="${esc(idx)}" style="font-size:12px;padding:8px 12px;">Опубликовать в Дзен</button>
-            <button type="button" class="btn-dark" data-publish-zen-draft="${esc(idx)}" style="font-size:12px;padding:8px 12px;">Черновик Дзен</button>
-          </div>`)
-        : "";
+      const flags = [
+        clip.zen_published || clip.dzen_published || clip.publish_zen_ok ? "Дзен" : null,
+        clip.vk_published || clip.publish_vk_ok ? "VK" : null,
+        clip.rutube_published || clip.publish_rutube_ok ? "RuTube" : null,
+        clip.tiktok_published || clip.publish_tiktok_ok ? "TikTok" : null,
+      ].filter(Boolean);
+      let zenBtn = "";
+      if (flags.length >= 4) {
+        zenBtn = `<div class="publish-ok-badge"><span class="dot"></span>Опубликовано · ${esc(flags.join(" + "))}</div>`;
+      } else {
+        const badges = flags.map((f) => `<div class="publish-ok-badge"><span class="dot"></span>${esc(f)} ✓</div>`).join("");
+        const coverHint = clip.cover_ready
+          ? "Только отмеченные: Дзен / VK / RuTube / TikTok"
+          : "Обложки ещё нет — лучше сначала «Подготовить обложки», но публиковать можно";
+        zenBtn = `${badges}
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+            <button type="button" class="btn-blue" data-publish-selected="${esc(idx)}" style="font-size:12px;padding:8px 12px;">Опубликовать (по галочкам)</button>
+          </div>
+          <div style="margin-top:6px;font-size:11px;color:#94a3b8;">${coverHint}</div>`;
+      }
       if (url) {
         return `<div class="cover-panel">
           <div class="cover-meta">Обложка готова · 9:16</div>
@@ -943,6 +954,7 @@
       return `<div class="cover-panel">
         <div class="cover-meta">Обложка</div>
         <div class="cover-empty">Выберите клип галочкой<br>и нажмите «Подготовить обложки»</div>
+        ${zenBtn}
       </div>`;
     }
     function platformPack(meta, platform) {
@@ -997,17 +1009,21 @@
         <div class="card-dark">
           <div>
             <h2>Панель публикации</h2>
-            <p>Галочка → обложки (только выбранные) → Дзен через Playwright. Первый вход: «Войти в Дзен».</p>
+            <p>Галочка клипа → платформы (Дзен / VK / RuTube / TikTok) → обложки → «Опубликовать (по галочкам)».</p>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" class="btn-dark" id="selectAllClips" style="background:#1e293b;">Выбрать все</button>
             <button type="button" class="btn-dark" id="clearAllClips" style="background:#1e293b;">Снять</button>
             <button type="button" class="btn-blue" id="preparePublish">Подготовить обложки</button>
-            <button type="button" class="btn-dark" id="dzenLoginBtn" style="background:#0f766e;">Войти в Дзен (cookies)</button>
+            <button type="button" class="btn-dark" id="dzenLoginBtn" style="background:#0f766e;">Войти в Дзен</button>
+            <button type="button" class="btn-dark" id="vkLoginBtn" style="background:#2563eb;">Войти в VK</button>
+            <button type="button" class="btn-dark" id="rutubeLoginBtn" style="background:#b45309;">Войти в RuTube</button>
+            <button type="button" class="btn-dark" id="tiktokLoginBtn" style="background:#111827;">Войти в TikTok</button>
           </div>
         </div>
         <div id="publishStatus" style="margin-top:10px;font-size:13px;font-weight:var(--fw-semibold);"></div>
-        <div id="dzenStatusLine" style="margin-top:6px;font-size:12px;color:#94a3b8;"></div>`;
+        <div id="dzenStatusLine" style="margin-top:6px;font-size:12px;color:#94a3b8;"></div>
+        <div id="platformsStatusLine" style="margin-top:4px;font-size:12px;color:#94a3b8;"></div>`;
       $("clips").innerHTML = `
         <h2 style="margin:4px 0 12px;font-size:20px;">Готовые ролики (${clips.length})</h2>
         <div class="clips">${clips.map((clip) => {
@@ -1024,12 +1040,10 @@
                 <span>Публиковать этот клип</span>
               </label>
               <div class="platforms" data-platforms-for="${esc(idx)}">
-                <label><input type="checkbox" value="youtube" checked> YouTube</label>
-                <label><input type="checkbox" value="instagram" checked> Instagram</label>
-                <label><input type="checkbox" value="tiktok" checked> TikTok</label>
-                <label><input type="checkbox" value="telegram"> Telegram</label>
-                <label><input type="checkbox" value="vk"> VK</label>
                 <label><input type="checkbox" value="zen" checked> Дзен</label>
+                <label><input type="checkbox" value="vk" checked> VK</label>
+                <label><input type="checkbox" value="rutube" checked> RuTube</label>
+                <label><input type="checkbox" value="tiktok" checked> TikTok</label>
               </div>
               ${coverBlock(clip)}
               <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
@@ -1046,6 +1060,7 @@
         <button type="button" class="btn-blue" id="preparePublishBar">Подготовить обложки</button>`;
       wirePublishUi();
       refreshDzenStatus();
+      if (typeof refreshPlatformsStatus === 'function') refreshPlatformsStatus();
     }
     function collectSelection() {
       const selected = [];
@@ -1064,22 +1079,41 @@
       if (el) el.textContent = String(n);
       if (top) top.textContent = String(n);
     }
+    let coverBusy = false;
     async function preparePublishFlow() {
       const statusEl = $("publishStatus");
-      if (!isLocalBridge() || !clipsDir) return;
+      if (!isLocalBridge()) {
+        if (statusEl) statusEl.textContent = "Откройте Results через http://127.0.0.1:8765/results";
+        return;
+      }
+      if (!clipsDir) {
+        if (statusEl) statusEl.textContent = "Нет clips_dir — нажмите «Загрузить latest-results» и повторите.";
+        return;
+      }
+      if (coverBusy) {
+        if (statusEl) statusEl.textContent = "Обложки уже генерируются…";
+        return;
+      }
       const selected = collectSelection();
       if (!selected.length) {
         if (statusEl) statusEl.textContent = "Выберите хотя бы один клип — обложка только для галочек.";
         return;
       }
+      coverBusy = true;
+      const prepBtns = [$("preparePublish"), $("preparePublishBar")].filter(Boolean);
+      prepBtns.forEach((b) => { b.disabled = true; });
       if (statusEl) statusEl.textContent = `Генерирую ${selected.length} обложк(и)…`;
       openCoverWait(selected.length);
       try {
+        const controller = new AbortController();
+        const kill = setTimeout(() => controller.abort(), 15 * 60 * 1000);
         const response = await fetch("/api/prepare-publish", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clips_dir: clipsDir, selected }),
+          signal: controller.signal,
         });
+        clearTimeout(kill);
         const data = await response.json();
         $("coverWaitFill").style.width = "100%";
         if (!data.ok) {
@@ -1088,18 +1122,26 @@
           return;
         }
         $("coverWaitHint").textContent = "Готово — обновляю Results…";
-        await loadLatestResults();
-        closeCoverWait();
+        await loadLatestResults({ quiet: true });
+        showPublishSuccess(
+          `Обложки готовы: ${data.covers_ready ?? data.ready_count ?? selected.length}`,
+          { title: "Обложки готовы", hint: "Можно публиковать выбранные клипы", holdMs: 1800 }
+        );
         if (statusEl) {
           statusEl.innerHTML = `Обложки готовы: <b>${esc(data.covers_ready ?? data.ready_count)}</b> · очередь <b>${esc(data.status)}</b>`;
         }
-        // scroll to first selected with cover
         const first = selected[0]?.index;
         const card = first != null ? document.querySelector(`[data-clip-card="${first}"]`) : null;
         if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
       } catch (error) {
         closeCoverWait();
-        if (statusEl) statusEl.textContent = `Ошибка: ${error.message}`;
+        const msg = error && error.name === "AbortError"
+          ? "Таймаут генерации обложек (15 мин). Проверьте KIE_API_KEY / brand kit и попробуйте снова."
+          : (error.message || String(error));
+        if (statusEl) statusEl.textContent = `Ошибка: ${msg}`;
+      } finally {
+        coverBusy = false;
+        prepBtns.forEach((b) => { b.disabled = false; });
       }
     }
     function wirePublishUi() {
@@ -1114,13 +1156,107 @@
       if (prep) prep.onclick = preparePublishFlow;
       if (prepBar) prepBar.onclick = preparePublishFlow;
       const dzenLogin = $("dzenLoginBtn");
-      if (dzenLogin) dzenLogin.onclick = dzenLoginFlow;
-      document.querySelectorAll("[data-publish-zen]").forEach((btn) => {
-        btn.onclick = () => publishDzenFlow(Number(btn.getAttribute("data-publish-zen")), false);
+      if (dzenLogin) dzenLogin.onclick = () => platformLoginFlow("dzen");
+      const vkLogin = $("vkLoginBtn");
+      if (vkLogin) vkLogin.onclick = () => platformLoginFlow("vk");
+      const rutubeLogin = $("rutubeLoginBtn");
+      if (rutubeLogin) rutubeLogin.onclick = () => platformLoginFlow("rutube");
+      const tiktokLogin = $("tiktokLoginBtn");
+      if (tiktokLogin) tiktokLogin.onclick = () => platformLoginFlow("tiktok");
+      document.querySelectorAll("[data-publish-selected]").forEach((btn) => {
+        btn.onclick = () => publishSelectedFlow(Number(btn.getAttribute("data-publish-selected")));
       });
-      document.querySelectorAll("[data-publish-zen-draft]").forEach((btn) => {
-        btn.onclick = () => publishDzenFlow(Number(btn.getAttribute("data-publish-zen-draft")), true);
+    }
+
+    function selectedPlatformsFor(index) {
+      const box = document.querySelector(`[data-platforms-for="${index}"]`);
+      if (!box) return [];
+      return Array.from(box.querySelectorAll("input:checked"))
+        .map((el) => String(el.value || "").toLowerCase())
+        .filter((p) => ["zen", "vk", "rutube", "tiktok"].includes(p));
+    }
+    async function refreshPlatformsStatus() {
+      const line = $("platformsStatusLine");
+      if (!line || !isLocalBridge()) return;
+      const q = clipsDir ? `?clips_dir=${encodeURIComponent(clipsDir)}` : "";
+      const parts = [];
+      for (const [name, api] of [
+        ["VK", "/api/vk-status"],
+        ["RuTube", "/api/rutube-status"],
+        ["TikTok", "/api/tiktok-status"],
+      ]) {
+        try {
+          const response = await fetch(`${api}${q}`);
+          const data = await response.json();
+          parts.push(`${name}: ${data.has_cookies ? "cookies OK" : "нет cookies"}`);
+        } catch (e) {
+          parts.push(`${name}: ${e.message}`);
+        }
+      }
+      line.textContent = parts.join(" · ");
+    }
+    async function publishSelectedFlow(index) {
+      const statusEl = $("publishStatus");
+      if (!isLocalBridge() || !clipsDir) return;
+      const platforms = selectedPlatformsFor(index);
+      if (!platforms.length) {
+        if (statusEl) statusEl.textContent = "Отметьте хотя бы одну платформу: Дзен / VK / RuTube / TikTok.";
+        return;
+      }
+      const clipLabel = `clip_${String(index).padStart(2, "0")}`;
+      openCoverWait(1, {
+        title: `Публикую ${clipLabel}`,
+        sub: platforms.map((p) => p.toUpperCase()).join(" + "),
+        hint: "По очереди: только отмеченные платформы",
+        hints: ["Playwright…", "Обложка и описание…", "Ждём Publish…"],
+        skipCoverPoll: true,
       });
+      if (statusEl) statusEl.textContent = `${clipLabel} → ${platforms.join(", ")}…`;
+      try {
+        const response = await fetch("/api/publish-platforms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clips_dir: clipsDir, index, platforms, draft: false }),
+        });
+        const data = await response.json();
+        const results = Array.isArray(data.results) ? data.results : [];
+        const okList = results.filter((r) => r.ok).map((r) => r.platform);
+        const failList = results.filter((r) => !r.ok).map((r) => `${r.platform}: ${r.error || "fail"}`);
+        if (data.ok || okList.length) {
+          showPublishSuccess(
+            okList.length ? `${clipLabel}: ${okList.join(", ")}` : `${clipLabel} частично`,
+            {
+              title: data.ok ? "Опубликовано" : "Частичный успех",
+              hint: failList.length ? failList.join(" · ") : "✓ можно работать дальше",
+              holdMs: 2600,
+            }
+          );
+          if (latestData && Array.isArray(latestData.clips)) {
+            const clip = latestData.clips.find((c) => Number(c.index) === Number(index));
+            if (clip) {
+              if (okList.includes("zen")) { clip.zen_published = true; clip.dzen_published = true; clip.publish_zen_ok = true; }
+              if (okList.includes("vk")) { clip.vk_published = true; clip.publish_vk_ok = true; }
+              if (okList.includes("rutube")) { clip.rutube_published = true; clip.publish_rutube_ok = true; }
+              if (okList.includes("tiktok")) { clip.tiktok_published = true; clip.publish_tiktok_ok = true; }
+            }
+            try { render(latestData); } catch (_) {}
+          }
+          if (statusEl) {
+            statusEl.innerHTML = data.ok
+              ? `<span class="publish-ok-badge"><span class="dot"></span>${esc(clipLabel)} · ${esc(okList.join(" + "))}</span>`
+              : `Частично: OK ${esc(okList.join(", ") || "—")}; ошибки: ${esc(failList.join("; ") || data.error || "")}`;
+          }
+        } else {
+          closeCoverWait();
+          if (statusEl) statusEl.innerHTML = `Ошибка публикации: ${esc(data.error || "failed")}`;
+        }
+        try { await loadLatestResults(); await refreshDzenStatus(); await refreshPlatformsStatus(); } catch (_) {}
+        if (data.ok || okList.length) setTimeout(() => closeCoverWait(), 2600);
+        else closeCoverWait();
+      } catch (error) {
+        closeCoverWait();
+        if (statusEl) statusEl.textContent = `Публикация: ${error.message}`;
+      }
     }
     async function refreshDzenStatus() {
       const line = $("dzenStatusLine");
@@ -1152,39 +1288,50 @@
       "Ставлю до 5 тегов по одному чипу…",
       "Жму «Опубликовать» и жду 10 секунд…",
     ];
-    async function dzenLoginFlow() {
+    async function platformLoginFlow(platform) {
       const statusEl = $("publishStatus");
       if (!isLocalBridge()) return;
-      if (statusEl) statusEl.textContent = "Открываю браузер для входа в Дзен…";
+      const meta = {
+        dzen: { api: "/api/dzen-login", title: "Вход в Дзен", ok: "Дзен" },
+        vk: { api: "/api/vk-login", title: "Вход в VK", ok: "VK" },
+        rutube: { api: "/api/rutube-login", title: "Вход в RuTube", ok: "RuTube" },
+        tiktok: { api: "/api/tiktok-login", title: "Вход в TikTok", ok: "TikTok" },
+      }[platform];
+      if (!meta) return;
+      if (statusEl) statusEl.textContent = `Открываю браузер: ${meta.title}…`;
       openCoverWait(1, {
-        title: "Вход в Дзен",
+        title: meta.title,
         sub: "Playwright headed · сохраняю cookies",
-        hint: DZEN_HINTS[1],
+        hint: "Войдите в аккаунт в открывшемся окне",
         hints: DZEN_HINTS,
         skipCoverPoll: true,
       });
       try {
-        const response = await fetch("/api/dzen-login", {
+        const response = await fetch(meta.api, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clips_dir: clipsDir || null }),
         });
         const data = await response.json();
         if (data.ok) {
-          showPublishSuccess("Cookies сохранены", { title: "Вход в Дзен готов", hint: "Можно публиковать клипы", holdMs: 1800 });
+          showPublishSuccess("Cookies сохранены", { title: `${meta.ok}: вход готов`, hint: "Можно публиковать клипы", holdMs: 1800 });
         } else {
           closeCoverWait();
         }
         if (statusEl) {
           statusEl.textContent = data.ok
-            ? "Дзен: вход успешен, cookies сохранены."
-            : `Дзен login ошибка: ${data.error || "failed"}`;
+            ? `${meta.ok}: вход успешен, cookies сохранены.`
+            : `${meta.ok} login ошибка: ${data.error || "failed"}`;
         }
         await refreshDzenStatus();
+        await refreshPlatformsStatus();
       } catch (error) {
         closeCoverWait();
-        if (statusEl) statusEl.textContent = `Дзен login: ${error.message}`;
+        if (statusEl) statusEl.textContent = `${meta.ok} login: ${error.message}`;
       }
+    }
+    async function dzenLoginFlow() {
+      return platformLoginFlow("dzen");
     }
     async function publishDzenFlow(index, draft) {
       const statusEl = $("publishStatus");
@@ -1293,17 +1440,40 @@
       button.textContent = "Скопировано!";
       setTimeout(() => { button.textContent = "Скопировать текст"; }, 1200);
     });
-    async function loadLatestResults() {
-      if (!isLocalBridge()) return;
+    async function loadLatestResults(opts = {}) {
+      if (!isLocalBridge()) {
+        if (!opts.quiet) console.warn("Results UI: нужен localhost bridge");
+        return;
+      }
       try {
         const response = await fetch("/api/latest-results");
         const payload = await response.json();
         if (response.ok && payload.ok) {
           if (payload.path) $("defaultJsonPath").textContent = payload.path;
-          $("jsonText").value = JSON.stringify(payload.data, null, 2);
+          // Не пихаем мегабайтный JSON в textarea — это вешало кнопку обложек.
+          const meta = payload.data || {};
+          $("jsonText").value = [
+            `# slim view`,
+            `status: ${meta.status || ""}`,
+            `clips_dir: ${meta.clips_dir || ""}`,
+            `clips: ${(meta.clips || []).length}`,
+            `covers_ready: ${meta.publish_desk?.covers_ready ?? 0}`,
+            `path: ${payload.path || ""}`,
+            ``,
+            `Полный latest-results.json на диске. UI читает API напрямую.`,
+          ].join("\n");
           render(payload.data);
+        } else if (!opts.quiet) {
+          const statusEl = $("publishStatus");
+          if (statusEl) statusEl.textContent = payload.error || "latest-results не найден";
         }
-      } catch (e) { console.warn(e); }
+      } catch (e) {
+        console.warn(e);
+        if (!opts.quiet) {
+          const statusEl = $("publishStatus");
+          if (statusEl) statusEl.textContent = `Не удалось загрузить results: ${e.message}`;
+        }
+      }
     }
     async function loadStatus() {
       if (!isLocalBridge()) return;

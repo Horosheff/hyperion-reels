@@ -1928,17 +1928,17 @@
             <div class="viz-dark viz-modes" id="layoutModeCard">
               <span class="viz-kicker">Шаг 00 · Layout</span>
               <h3>Режим монтажа</h3>
-              <p id="layoutModeHint">Обычный: один кадр 9:16 с лицом</p>
+              <p id="layoutModeHint">Вебинар: dual-screen 30/70 — экран сверху, лицо снизу</p>
               <div class="mode-grid" role="radiogroup" aria-label="Режим монтажа">
                 <label class="mode-card">
-                  <input type="radio" name="layoutModeRadio" value="regular" checked>
+                  <input type="radio" name="layoutModeRadio" value="regular">
                   <span class="mode-check" aria-hidden="true">✓</span>
                   <span class="mode-ico" aria-hidden="true">▣</span>
                   <b>Обычный</b>
                   <span>Talking head · 9:16</span>
                 </label>
                 <label class="mode-card">
-                  <input type="radio" name="layoutModeRadio" value="webinar">
+                  <input type="radio" name="layoutModeRadio" value="webinar" checked>
                   <span class="mode-check" aria-hidden="true">✓</span>
                   <span class="mode-ico" aria-hidden="true">⧉</span>
                   <b>Вебинар</b>
@@ -1979,11 +1979,11 @@
                   <span>Клипов</span>
                 </label>
                 <label class="metric-box field" style="text-transform:none;letter-spacing:0;">
-                  <input id="minSec" class="input" type="number" value="30" min="5" style="border:0;background:transparent;padding:0;font-size:var(--fs-4xl);font-weight:var(--fw-bold);font-variant-numeric:tabular-nums;letter-spacing:-0.04em;">
+                  <input id="minSec" class="input" type="number" value="60" min="5" style="border:0;background:transparent;padding:0;font-size:var(--fs-4xl);font-weight:var(--fw-bold);font-variant-numeric:tabular-nums;letter-spacing:-0.04em;">
                   <span>Мин, сек</span>
                 </label>
                 <label class="metric-box field" style="text-transform:none;letter-spacing:0;">
-                  <input id="maxSec" class="input" type="number" value="60" min="10" style="border:0;background:transparent;padding:0;font-size:var(--fs-4xl);font-weight:var(--fw-bold);font-variant-numeric:tabular-nums;letter-spacing:-0.04em;">
+                  <input id="maxSec" class="input" type="number" value="120" min="10" style="border:0;background:transparent;padding:0;font-size:var(--fs-4xl);font-weight:var(--fw-bold);font-variant-numeric:tabular-nums;letter-spacing:-0.04em;">
                   <span>Макс, сек</span>
                 </label>
               </div>
@@ -2092,8 +2092,8 @@
                 <select id="runMode"><option selected value="agent">agent</option><option value="local">local</option></select>
                 <input id="whisperLanguage" value="auto">
                 <input id="subtitleTemplate" value="mrbeast">
-                <input id="splitRatio" value="regular">
-                <input id="layoutMode" value="regular">
+                <input id="splitRatio" value="webinar_30_70">
+                <input id="layoutMode" value="webinar">
                 <input id="bRollMax" value="3">
               </div>
             </div>
@@ -2130,7 +2130,7 @@
                     <small>Выбор хайлайтов и редактура</small>
                   </div>
                   <div class="lane-nodes">
-                    <div class="node"><i>06</i><b>Хайлайты</b><span>Выбирает лучшие куски 30–60 сек</span></div>
+                    <div class="node"><i>06</i><b>Хайлайты</b><span>Выбирает лучшие куски 60–120 сек</span></div>
                     <div class="node"><i>07</i><b>Оценки</b><span>Ставит hook, virality и качество</span></div>
                     <div class="node"><i>08</i><b>Редактор</b><span>Отбрасывает скучное и обрубленное</span></div>
                     <div class="node"><i>09</i><b>Вирусолог</b><span>Оценивает, будут ли шарить клип</span></div>
@@ -2210,7 +2210,7 @@
 
     function selectedLayoutMode() {
       const el = document.querySelector('input[name="layoutModeRadio"]:checked');
-      return (el && el.value) || "regular";
+      return (el && el.value) || "webinar";
     }
 
     const LAYOUT_HINTS = {
@@ -2245,8 +2245,8 @@
       return {
         runMode: $("runMode").value,
         clips: Number($("clips").value || 10),
-        minSec: Number($("minSec").value || 30),
-        maxSec: Number($("maxSec").value || 60),
+        minSec: Number($("minSec").value || 60),
+        maxSec: Number($("maxSec").value || 120),
         model: $("model").value,
         language: $("whisperLanguage").value.trim() || "auto",
         qualityPreset: $("qualityPreset").value,

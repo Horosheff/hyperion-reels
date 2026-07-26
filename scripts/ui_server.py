@@ -264,7 +264,7 @@ def build_command(video_path: Path, settings: dict) -> list[str]:
         "--profile",
         str(settings.get("profile") or "education"),
         "--layout",
-        str(settings.get("layout") or settings.get("profile") or "regular"),
+        str(settings.get("layout") or settings.get("profile") or "webinar"),
         "--subtitle-format",
         str(settings.get("subtitleFormat") or "both"),
         "--memory-root",
@@ -330,7 +330,7 @@ def write_brief(video_path: Path, settings: dict, command: list[str], log_path: 
         f"language: {settings.get('language') or 'auto'}",
         f"subtitle_template: {settings.get('template', 'mrbeast')}",
         f"metadata_profile: {settings.get('profile', 'education')}",
-        f"layout: {settings.get('layout') or settings.get('splitRatio') or 'regular'}",
+        f"layout: {settings.get('layout') or settings.get('splitRatio') or 'webinar'}",
         f"subtitle_format: {settings.get('subtitleFormat', 'both')}",
         f"quality_preset: {settings.get('qualityPreset', 'release')}",
         f"word_timestamps: {parse_bool(settings.get('wordTimestamps'), True)}",
@@ -497,7 +497,7 @@ def start_request(video_path: Path, settings: dict) -> dict:
     run_mode = normalize_run_mode(settings.get("runMode"))
     try:
         from videoshorts_core import metadata_profile_for_layout, normalize_layout_mode
-        layout = normalize_layout_mode(settings.get("layout") or settings.get("splitRatio") or "regular")
+        layout = normalize_layout_mode(settings.get("layout") or settings.get("splitRatio") or "webinar")
         profile = str(settings.get("profile") or "").strip() or metadata_profile_for_layout(layout)
         settings = {**settings, "runMode": run_mode, "layout": layout, "profile": profile}
     except Exception:

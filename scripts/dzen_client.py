@@ -25,6 +25,7 @@ import subprocess
 import requests
 import time
 import re
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
@@ -101,12 +102,21 @@ class DzenClient:
         # Для VideoShorts publish всегда закрываем браузер (иначе UI зависает)
         force_close = os.getenv("VIDEOSHORTS_FORCE_CLOSE_BROWSER", "1").lower() not in {"0", "false", "no"}
         self.keep_open = (os.getenv('KEEP_BROWSER_OPEN', 'false').lower() == 'true') and not force_close
+        # Капчу «Я не робот» не обходим — только пауза для ручного клика
+        self.captcha_wait_sec = max(30, int(os.getenv("DZEN_CAPTCHA_WAIT_SEC", "300")))
+        from browser_humanize import make_humanize
+
+        self.hz = make_humanize(lambda: self.page, "DZEN_HUMANIZE", "HUMANIZE", name="dzen")
+        self.humanize = self.hz.enabled
+        self._captcha_hint_from_network = False
         
         # Playwright объекты
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
+        # Ответы publish API (чтобы не принимать ложный «успех» по тексту «Опубликовано» в сайдбаре)
+        self._publish_api_events: List[Dict[str, object]] = []
         
         # Credentials опциональны — можно авторизоваться вручную
         self.manual_login = False
@@ -116,17 +126,120 @@ class DzenClient:
             else:
                 logger.warning("Credentials не указаны и нет cookies — потребуется ручная авторизация")
                 self.manual_login = True
-    
+        logger.info("Dzen humanize=%s (HUMANIZE / DZEN_HUMANIZE)", self.humanize)
+
+    async def _human_pause(self, lo_ms: int = 250, hi_ms: int = 900) -> None:
+        await self.hz.pause_ms(lo_ms, hi_ms)
+    async def _captcha_visible(self) -> bool:
+        """SmartCaptcha / «Я не робот» / iframe капчи Яндекса."""
+        if not self.page:
+            return False
+        try:
+            url = (self.page.url or "").lower()
+        except Exception:
+            url = ""
+        if "captcha" in url or "showcaptcha" in url:
+            return True
+        selectors = (
+            'iframe[src*="captcha"]',
+            'iframe[src*="smartcaptcha"]',
+            'iframe[src*="checkbox"]',
+            '[class*="Captcha"]',
+            '[class*="captcha"]',
+            'text=Я не робот',
+            'text=Подтвердите, что вы не робот',
+            'text=Confirm that you are not a robot',
+            'text=SmartCaptcha',
+        )
+        for sel in selectors:
+            try:
+                loc = self.page.locator(sel).first
+                if await loc.count() > 0 and await loc.is_visible(timeout=400):
+                    return True
+            except Exception:
+                continue
+        try:
+            body = (await self.page.inner_text("body")).lower()
+        except Exception:
+            body = ""
+        markers = (
+            "я не робот",
+            "не робот",
+            "smartcaptcha",
+            "captcha",
+            "подтвердите, что вы человек",
+            "проверка безопасности",
+        )
+        return any(m in body for m in markers)
+
+    async def _wait_for_manual_captcha(self, *, reason: str = "") -> bool:
+        """
+        Не решает капчу. Держит браузер открытым, пока пользователь
+        нажмёт «Я не робот». Возвращает True, если капча исчезла / publish API ok.
+        """
+        wait_sec = self.captcha_wait_sec
+        logger.warning("=" * 56)
+        logger.warning("⚠️ КАПЧА ДЗЕНА — НУЖЕН РУЧНОЙ КЛИК")
+        if reason:
+            logger.warning(f"Причина: {reason}")
+        logger.warning("В открытом окне Chromium нажмите «Я не робот» / пройдите проверку.")
+        logger.warning(f"Жду до {wait_sec} сек. Скрипт сам продолжит после успеха.")
+        logger.warning("=" * 56)
+        try:
+            await self.screenshot("captcha_wait_manual")
+        except Exception:
+            pass
+        try:
+            # Попытка вытащить окно на передний план (Windows)
+            await self.page.bring_to_front()
+        except Exception:
+            pass
+
+        deadline = time.time() + wait_sec
+        while time.time() < deadline:
+            if self._any_publish_api_ok():
+                logger.info("✓ После капчи пришёл успешный publish API")
+                self._captcha_hint_from_network = False
+                return True
+            still = await self._captcha_visible()
+            if not still:
+                # UI капчи пропал — даже если сеть раньше слала captcha-required
+                self._captcha_hint_from_network = False
+                logger.info("✓ Капча больше не видна")
+                return True
+            left = int(deadline - time.time())
+            if left % 15 < 3:
+                logger.info(f"…жду клик по капче ({left}с осталось)")
+            await self.page.wait_for_timeout(2500)
+        logger.error("✗ Время ожидания капчи истекло")
+        try:
+            await self.screenshot("captcha_timeout")
+        except Exception:
+            pass
+        return False    
     async def start(self):
         """Запуск браузера и создание контекста"""
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(
-            headless=self.headless,
-            args=[
+        try:
+            from playwright_display import chromium_window_args, describe_placement
+
+            launch_args = [
                 '--disable-blink-features=AutomationControlled',
                 '--disable-dev-shm-usage',
-                '--no-sandbox'
+                '--no-sandbox',
+                *chromium_window_args(maximize=True),
             ]
+            logger.info(f"Display: {describe_placement()}")
+        except Exception as exc:
+            logger.warning(f"playwright_display unavailable: {exc}")
+            launch_args = [
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+            ]
+        self.browser = await self.playwright.chromium.launch(
+            headless=self.headless,
+            args=launch_args
         )
         
         # Создание контекста с реалистичными настройками
@@ -152,19 +265,128 @@ class DzenClient:
         logger.info("Браузер запущен")
     
     def _attach_debug_listeners(self):
-        """Подключает логирование консоли/ошибок из браузера"""
+        """Подключает логирование консоли/ошибок из браузера + publish API."""
         if not self.page:
             return
         
         def _on_console(msg):
             if msg.type in ['error', 'warning']:
-                logger.debug(f"[БРАУЗЕР] {msg.type}: {msg.text}")
+                text = msg.text or ""
+                logger.debug(f"[БРАУЗЕР] {msg.type}: {text}")
+                low = text.lower()
+                if "captcha-required" in low or "captcha_required" in low:
+                    self._captcha_hint_from_network = True
         
         def _on_page_error(err):
             logger.error(f"[ОШИБКА СТРАНИЦЫ] {err}")
+
+        def _on_response(response):
+            try:
+                url = response.url or ""
+                # Метрика Яндекса иногда шлёт video_publish_error с captcha
+                if "video_publish_error" in url and "captcha" in url.lower():
+                    self._captcha_hint_from_network = True
+                if "captcha-required-error" in url:
+                    self._captcha_hint_from_network = True
+                # Только мутация публикации — не list/count/mail.ru/metrika.
+                if "update-publication-content-and-publish" not in url:
+                    return
+                if "dzen.ru/editor-api" not in url:
+                    return
+                event = {
+                    "url": url,
+                    "status": int(response.status),
+                    "ok": bool(response.ok),
+                    "ts": time.time(),
+                }
+                self._publish_api_events.append(event)
+                level = logger.info if response.ok else logger.error
+                level(f"[DZEN API] {response.status} {url}")
+                if not response.ok:
+                    # 400 на publish часто = капча
+                    self._captcha_hint_from_network = True
+            except Exception as exc:
+                logger.debug(f"response listener: {exc}")
         
         self.page.on("console", _on_console)
         self.page.on("pageerror", _on_page_error)
+        self.page.on("response", _on_response)
+
+    def _reset_publish_api_events(self) -> None:
+        self._publish_api_events = []
+
+    def _latest_publish_api(self) -> Optional[Dict[str, object]]:
+        if not self._publish_api_events:
+            return None
+        return self._publish_api_events[-1]
+
+    def _any_publish_api_ok(self) -> bool:
+        return any(bool(e.get("ok")) for e in self._publish_api_events)
+
+    async def _publish_modal_visible(self) -> bool:
+        """Модалка редактора ещё открыта → публикация не подтверждена."""
+        if not self.page:
+            return False
+        for sel in (
+            'text=Публикация ролика',
+            'button:has-text("Опубликовать после обработки")',
+            'text=Загрузили ролик',
+            'text=Обрабатываем',
+        ):
+            try:
+                loc = self.page.locator(sel).first
+                if await loc.count() > 0 and await loc.is_visible(timeout=400):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _confirm_publish_success(self, title: str = "") -> bool:
+        """Строгая проверка: API 2xx на publish и/или модалка ушла + заголовок в списке."""
+        if self._any_publish_api_ok():
+            api_ok = self._latest_publish_api()
+            logger.info(
+                f"✓ Публикация подтверждена Dzen API "
+                f"(status={api_ok.get('status') if api_ok else '?'}, events={len(self._publish_api_events)})"
+            )
+            return True
+
+        api = self._latest_publish_api()
+        if api is not None and not api.get("ok"):
+            logger.error(
+                f"✗ Дзен API отклонил публикацию: status={api.get('status')} url={api.get('url')}"
+            )
+            # Капча часто приходит как 400 captcha-required-error — даём шанс увидеть в UI
+            try:
+                body = await self.page.inner_text("body") if self.page else ""
+            except Exception:
+                body = ""
+            if "капч" in body.lower() or "captcha" in body.lower():
+                logger.error("✗ Похоже, Дзен запросил капчу — нужен ручной ввод")
+            return False
+
+        modal_open = await self._publish_modal_visible()
+        if modal_open:
+            logger.error("✗ Модалка «Публикация ролика» всё ещё открыта — публикация не завершена")
+            return False
+
+        # Fallback: заголовок виден в списке публикаций (не путать с счётчиком «Опубликовано»)
+        title_clean = (title or "").strip()
+        if title_clean and self.page:
+            try:
+                snippet = title_clean[:40]
+                loc = self.page.get_by_text(snippet, exact=False).first
+                if await loc.count() > 0 and await loc.is_visible(timeout=1500):
+                    logger.info(f"✓ Заголовок найден в списке публикаций: {snippet!r}")
+                    return True
+            except Exception:
+                pass
+
+        logger.error(
+            "✗ Нет подтверждения публикации (API не ответил ok / модалка / заголовок не найден). "
+            "Раньше ложный успех давал текст «Опубликовано» в сайдбаре."
+        )
+        return False
     
     async def close(self, force: bool = False):
         """Закрытие браузера. force=True — всегда закрыть (для VideoShorts publish)."""
@@ -226,13 +448,13 @@ class DzenClient:
         return str(filename)
     
     async def _wait_and_click(self, selectors: List[str], description: str = "элемент") -> bool:
-        """Ждёт появления одного из селекторов и кликает"""
+        """Ждёт появления одного из селекторов и кликает по-человечески."""
         for selector in selectors:
             try:
                 element = self.page.locator(selector).first
                 if await element.count() > 0:
                     await element.wait_for(state='visible', timeout=5000)
-                    await element.click()
+                    await self.hz.click(element)
                     logger.info(f"✓ Клик по {description} (селектор: {selector})")
                     return True
             except Exception:
@@ -240,13 +462,12 @@ class DzenClient:
         return False
     
     async def _fill_field(self, selectors: List[str], value: str, description: str = "поле") -> bool:
-        """Заполняет первое найденное поле"""
+        """Заполняет первое найденное поле с печатью/паузами."""
         for selector in selectors:
             try:
                 field = self.page.locator(selector).first
                 if await field.count() > 0:
-                    await field.click()
-                    await field.fill(value)
+                    await self.hz.type_text(field, value)
                     logger.info(f"✓ {description} заполнено")
                     return True
             except Exception:
@@ -664,19 +885,9 @@ class DzenClient:
             page_content = await self.page.content()
             
             if 'captcha' in current_url or 'captcha' in page_content.lower() or 'не робот' in page_content.lower():
-                logger.warning("=" * 50)
-                logger.warning("⚠️ ОБНАРУЖЕНА КАПЧА!")
-                logger.warning("Пожалуйста, пройдите капчу вручную в открытом браузере")
-                logger.warning("=" * 50)
-                await self.screenshot("captcha_detected")
-                
-                # Ждём пока пользователь пройдёт капчу (до 2 минут)
-                for i in range(24):  # 24 * 5 = 120 секунд
-                    await self.page.wait_for_timeout(5000)
-                    current_url = self.page.url.lower()
-                    if 'captcha' not in current_url and 'passport.yandex' not in current_url:
-                        logger.info("Капча пройдена!")
-                        break
+                ok_cap = await self._wait_for_manual_captcha(reason="капча на входе в Яндекс/Дзен")
+                if not ok_cap:
+                    return False
             
             # Проверяем успешность авторизации
             current_url = self.page.url
@@ -775,9 +986,9 @@ class DzenClient:
         added = 0
         try:
             await tags_input.scroll_into_view_if_needed()
-            await self.page.wait_for_timeout(200)
-            await tags_input.click()
-            await self.page.wait_for_timeout(200)
+            await self.hz.pause_ms(150, 400)
+            await self.hz.click(tags_input)
+            await self.hz.pause_ms(150, 400)
 
             for tag in tags:
                 tag = tag.strip().lstrip("#").strip()
@@ -790,14 +1001,18 @@ class DzenClient:
                     added += 1
                     continue
                 try:
-                    await tags_input.click()
-                    await tags_input.fill("")
-                    await self.page.wait_for_timeout(80)
+                    await self.hz.click(tags_input)
                     try:
-                        await tags_input.press_sequentially(tag, delay=35)
+                        await tags_input.fill("")
                     except Exception:
-                        await tags_input.type(tag, delay=35)
-                    await self.page.wait_for_timeout(500)
+                        pass
+                    await self.hz.pause_ms(60, 180)
+                    delay = random.randint(28, 55) if self.humanize else 0
+                    try:
+                        await tags_input.press_sequentially(tag, delay=delay or 20)
+                    except Exception:
+                        await tags_input.type(tag, delay=delay or 20)
+                    await self.hz.pause_ms(350, 700)
 
                     # 1) клик по саджесту Дзена (+ тег)
                     clicked_suggest = False
@@ -1220,8 +1435,7 @@ class DzenClient:
             # Поле описания - contenteditable div
             desc_field = self.page.locator('[contenteditable="true"]').first
             if await desc_field.count() > 0:
-                await desc_field.click()
-                await desc_field.fill(full_description)
+                await self.hz.fill_fast_ok(desc_field, full_description)
                 logger.info(f"✓ Описание заполнено ({len(full_description)} симв.)")
             else:
                 # Альтернативные селекторы
@@ -1307,62 +1521,147 @@ class DzenClient:
             # ============================================
             if publish:
                 logger.info("Публикация ролика...")
-                
-                await self.page.wait_for_timeout(1000)
-                
-                publish_clicked = await self._wait_and_click(
-                    [
-                        'button:has-text("Опубликовать")',
-                        'button:has-text("Отправить")',
-                        '[data-testid="publish"]',
-                        'button[type="submit"]'
-                    ],
-                    "кнопка Опубликовать"
-                )
-                
-                if publish_clicked:
-                    # После клика Дзен обрабатывает публикацию — ждём 10 сек, затем закрываем окно
-                    logger.info("Ожидание 10 сек после «Опубликовать»…")
-                    await self.page.wait_for_timeout(10000)
+                self._reset_publish_api_events()
 
-                    closed = False
+                # Не кликаем publish на 0–10% encode — Dzen часто отвечает 400.
+                logger.info("Ожидание обработки видео перед публикацией…")
+                proc_deadline = time.time() + 150
+                while time.time() < proc_deadline:
+                    try:
+                        body = await self.page.inner_text("body")
+                    except Exception:
+                        body = ""
+                    low = False
+                    for marker in ("Обрабатываем: 0%", "Обрабатываем: 1%", "Обрабатываем: 2%",
+                                   "Обрабатываем: 3%", "Обрабатываем: 4%", "Обрабатываем: 5%",
+                                   "Обрабатываем: 6%", "Обрабатываем: 7%", "Обрабатываем: 8%",
+                                   "Обрабатываем: 9%"):
+                        if marker in body:
+                            low = True
+                            break
+                    if "Обрабатываем" not in body or not low:
+                        # Либо обработки нет, либо уже ≥10%
+                        if "Обрабатываем" not in body:
+                            logger.info("✓ Индикатор «Обрабатываем» исчез")
+                            break
+                        m = re.search(r"Обрабатываем:\s*(\d+)%", body)
+                        if m and int(m.group(1)) >= 10:
+                            logger.info(f"✓ Обработка {m.group(1)}% — можно публиковать")
+                            break
+                    await self.page.wait_for_timeout(3000)
+
+                await self.page.wait_for_timeout(1000)
+
+                # Дзен часто показывает «Опубликовать после обработки» пока крутится encode.
+                # Ждём кнопку и кликаем её (не закрываем модалку Escape до подтверждения API).
+                publish_clicked = False
+                deadline = time.time() + 180
+                while time.time() < deadline and not publish_clicked:
+                    await self._human_pause(400, 1200)
+                    publish_clicked = await self._wait_and_click(
+                        [
+                            'button:has-text("Опубликовать после обработки")',
+                            'button:has-text("Опубликовать")',
+                            'button:has-text("Отправить")',
+                            '[data-testid="publish"]',
+                        ],
+                        "кнопка Опубликовать"
+                    )
+                    if publish_clicked:
+                        break
+                    # Ещё обрабатывается — подождём и попробуем снова
+                    logger.info("Кнопка публикации пока недоступна, ждём обработку…")
+                    await self.page.wait_for_timeout(3000)
+
+                if not publish_clicked:
+                    logger.error("✗ Кнопка публикации не найдена за 3 минуты")
+                    await self.screenshot("error_no_publish_btn")
+                    return False
+
+                logger.info("Ожидание ответа Dzen API после «Опубликовать»…")
+                api_deadline = time.time() + 90
+                while time.time() < api_deadline:
+                    if self._any_publish_api_ok():
+                        break
+                    api = self._latest_publish_api()
+                    captcha_now = (
+                        self._captcha_hint_from_network
+                        or await self._captcha_visible()
+                    )
+                    # 400 / captcha-required → пауза для ручного «Я не робот», затем retry клика
+                    if (api is not None and not api.get("ok")) or captcha_now:
+                        if captcha_now or (api and not api.get("ok")):
+                            ok_cap = await self._wait_for_manual_captcha(
+                                reason="publish API 400 / SmartCaptcha при публикации"
+                            )
+                            if self._any_publish_api_ok():
+                                break
+                            if ok_cap:
+                                logger.info("Повторный клик «Опубликовать» после капчи…")
+                                self._captcha_hint_from_network = False
+                                await self._human_pause(600, 1400)
+                                await self._wait_and_click(
+                                    [
+                                        'button:has-text("Опубликовать после обработки")',
+                                        'button:has-text("Опубликовать")',
+                                        'button:has-text("Отправить")',
+                                    ],
+                                    "кнопка Опубликовать (после капчи)"
+                                )
+                                # ещё ждём API после retry
+                                retry_deadline = time.time() + 45
+                                while time.time() < retry_deadline:
+                                    if self._any_publish_api_ok():
+                                        break
+                                    if await self._captcha_visible():
+                                        await self._wait_for_manual_captcha(
+                                            reason="капча снова после retry"
+                                        )
+                                        break
+                                    await self.page.wait_for_timeout(1500)
+                            break
+                        await self.page.wait_for_timeout(2500)
+                        if self._any_publish_api_ok():
+                            break
+                        if not await self._publish_modal_visible():
+                            break
+                    if not await self._publish_modal_visible() and self._publish_api_events:
+                        break
+                    await self.page.wait_for_timeout(1000)
+
+                if self._publish_api_events and not self._any_publish_api_ok():
+                    await self.screenshot("error_publish_api")
+                    logger.error(
+                        "✗ Публикация отклонена API (все попытки update-publication-content-and-publish ≠ 2xx)."
+                    )
+                    return False
+
+                # Даём UI закрыть модалку сам; Escape только если API уже ok
+                wait_close_until = time.time() + 30
+                while time.time() < wait_close_until and await self._publish_modal_visible():
+                    await self.page.wait_for_timeout(1000)
+
+                if await self._publish_modal_visible() and self._any_publish_api_ok():
                     for close_sel in (
                         'button[aria-label="Закрыть"]',
                         'button[aria-label="Close"]',
-                        '[class*="modal"] button[class*="close"]',
-                        '[class*="Modal"] button[class*="close"]',
-                        '[class*="popup"] [class*="close"]',
                         'button:has-text("Закрыть")',
-                        '[class*="dialog"] button:has(svg)',
                     ):
                         try:
                             btn = self.page.locator(close_sel).first
                             if await btn.count() > 0 and await btn.is_visible(timeout=800):
                                 await btn.click(timeout=2000)
-                                closed = True
                                 logger.info(f"✓ Окно закрыто: {close_sel}")
                                 break
                         except Exception:
                             continue
-                    if not closed:
-                        try:
-                            await self.page.keyboard.press("Escape")
-                            await self.page.wait_for_timeout(500)
-                            await self.page.keyboard.press("Escape")
-                            logger.info("✓ Закрытие через Escape")
-                        except Exception:
-                            pass
 
-                    await self.page.wait_for_timeout(800)
-                    current_url = self.page.url
-                    page_content = await self.page.content()
-                    if "publications" in current_url or "Опубликовано" in page_content or "опубликован" in page_content.lower():
-                        logger.info("✓ Ролик опубликован!")
-                    else:
-                        logger.info("✓ Ролик отправлен на публикацию (после ожидания 10с)")
-                else:
-                    logger.warning("⚠ Кнопка публикации не найдена")
+                await self.page.wait_for_timeout(800)
+                await self.screenshot("step7_done")
+                if not await self._confirm_publish_success(title=title or ""):
+                    await self.screenshot("error_publish_unconfirmed")
                     return False
+                logger.info("✓ Ролик опубликован!")
             else:
                 logger.info("Сохранение черновика...")
                 await self._wait_and_click(
@@ -1374,8 +1673,7 @@ class DzenClient:
                 )
                 await self.page.wait_for_timeout(2000)
                 logger.info("✓ Черновик сохранён")
-            
-            await self.screenshot("step7_done")
+                await self.screenshot("step7_done")
             
             logger.info("=" * 50)
             logger.info("✓ РОЛИК УСПЕШНО ЗАГРУЖЕН!")
@@ -1413,6 +1711,7 @@ async def main():
     video_path = args.video or os.getenv('TEST_VIDEO_PATH', '')
     
     client = DzenClient()
+    exit_code = 0
     
     try:
         await client.start()
@@ -1420,6 +1719,7 @@ async def main():
         # Авторизация
         if not await client.login_yandex():
             logger.error("❌ Авторизация не удалась")
+            exit_code = 1
             return
         
         logger.info("✓ Авторизация успешна!")
@@ -1451,7 +1751,9 @@ async def main():
                 logger.info("=" * 50)
             else:
                 logger.error("❌ Загрузка не удалась")
+                exit_code = 1
         else:
+            exit_code = 1
             if video_path:
                 logger.error(f"Видео не найдено: {video_path}")
             else:
@@ -1468,6 +1770,9 @@ async def main():
         if force_close:
             client.keep_open = False
         await client.close(force=force_close)
+
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":

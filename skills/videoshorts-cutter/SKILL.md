@@ -13,7 +13,7 @@ description: Рендер 9:16 (regular / webinar / podcast tracking / sales) + 
 
 - Исходное видео (brief)
 - `refined-moments.json`, `montage-plan.json`, `clip-decisions.json`
-- brief: `layout` (`regular`|`webinar`|`podcast`|`sales`, default `regular`), `quality_preset`, `loudnorm` (default true)
+- brief: `layout` (`webinar`|`regular`|`podcast`|`sales`, default `webinar`), `quality_preset`, `loudnorm` (default true)
 
 ## Действия
 
@@ -26,7 +26,7 @@ $env:VIDEOSHORTS_AGENT_MODE="1"
 python cut_clips.py "<video_path>" "../videoshorts-memory/moments/refined-moments.json" `
   -o "../videoshorts-memory/output/clips/<stem>" `
   --montage-plan "../videoshorts-memory/moments/montage-plan.json" `
-  --layout regular `
+  --layout webinar `
   --quality-preset release `
   --require-agent-decisions
 ```

@@ -231,8 +231,9 @@ B-roll не нужен для базовой нарезки.
 
 1. Скопируйте `videoshorts.env.example` → `videoshorts.local.env`
 2. Впишите `KIE_API_KEY=...`
-3. **Никогда** не коммитьте `videoshorts.local.env`
-4. Не вставляйте ключ в brief/handoff/чат
+3. В шаблоне уже есть `PLAYWRIGHT_MONITOR=1` (браузеры на правом мониторе / ваш №1) — см. `docs/PLAYWRIGHT-DISPLAY.md`
+4. **Никогда** не коммитьте `videoshorts.local.env`
+5. Не вставляйте ключ в brief/handoff/чат
 
 Без ключа обычный пайплайн Shorts/Reels работает.
 
