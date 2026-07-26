@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Playwright-клиент VK Видео (клипы) по живой записи codegen.
 
-Сценарий (записан 2026-07-25):
-  1) https://vkvideo.ru/upload
-  2) [data-testid=video_upload_placeholder_add_btn] → popup
+Сценарий:
+  1) https://vkvideo.ru/upload — проверка сессии
+  2) Одна вкладка → cabinet.vkvideo.ru/?showUploader=1 (без второго popup-клика)
   3) «Выбрать файл» + [data-testid=video_upload_select_file]
   4) закрыть лишний modalbox (если есть)
-  5) [data-testid=clips-upload-description]
+  5) [data-testid=clips-upload-description] — печать с задержкой
   6) обложка: [data-testid=media-attach-input] «Выбрать обложку»
   7) опционально switch
   8) [data-testid=clips-uploadForm-publish-button]
+
+Важно: не открывать две вкладки кабинета подряд — антифрод VK это ловит.
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ import argparse
 import asyncio
 import logging
 import os
+import random
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -64,6 +67,11 @@ SESSION_COOKIE_NAMES = {"remixsid", "remixnsid", "remixsid_encrypted"}
 
 class VkVideoClient:
     UPLOAD_URL = "https://vkvideo.ru/upload"
+    # Прямой URL кабинета — одна вкладка, без popup «Добавить ролик»
+    CABINET_UPLOAD_URL = (
+        "https://cabinet.vkvideo.ru/dashboard"
+        "?showUploader=1&filterPreset=all&section=video_my_content"
+    )
 
     def __init__(self) -> None:
         self.channel = (
@@ -101,12 +109,47 @@ class VkVideoClient:
             "true",
             "yes",
         }
+        # Человекоподобные паузы (сек). VK_HUMANIZE=0 — минимум.
+        self.humanize = os.getenv("VK_HUMANIZE", "1").lower() not in {"0", "false", "no"}
 
         self.playwright = None
         self.browser = None
         self.context = None
         self.page = None
 
+    async def _human_pause(self, lo: float = 0.7, hi: float = 1.8) -> None:
+        """Случайная пауза между действиями — меньше «робот-паттерна»."""
+        if not self.humanize:
+            await asyncio.sleep(0.15)
+            return
+        await asyncio.sleep(random.uniform(lo, hi))
+
+    async def _human_click(self, locator, *, timeout: int = 8000) -> None:
+        """Hover → короткая пауза → click (не мгновенный клик)."""
+        target = locator.first if hasattr(locator, "first") else locator
+        try:
+            await target.scroll_into_view_if_needed(timeout=timeout)
+        except Exception:
+            pass
+        await self._human_pause(0.35, 0.9)
+        try:
+            await target.hover(timeout=timeout)
+            await self._human_pause(0.2, 0.55)
+        except Exception:
+            pass
+        await target.click(timeout=timeout)
+
+    async def _human_type(self, locator, text: str) -> None:
+        """Печать текста с задержкой вместо мгновенного fill."""
+        target = locator.first if hasattr(locator, "first") else locator
+        await self._human_click(target)
+        await self._human_pause(0.25, 0.6)
+        try:
+            await target.fill("")
+        except Exception:
+            pass
+        delay = random.randint(18, 42) if self.humanize else 0
+        await target.type(text, delay=delay)
     async def start(self) -> None:
         from playwright.async_api import async_playwright
 
@@ -300,34 +343,96 @@ class VkVideoClient:
         except Exception as exc:
             logger.debug("modalbox skip: %s", exc)
 
+    async def _close_extra_pages(self, keep) -> None:
+        """Закрыть лишние вкладки — оставляем только рабочую upload-страницу."""
+        if not self.context:
+            return
+        try:
+            for p in list(self.context.pages):
+                if p is keep:
+                    continue
+                try:
+                    await p.close()
+                    logger.info("Закрыл лишнюю вкладку: %s", (p.url or "")[:80])
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.debug("close extra pages: %s", exc)
+
     async def _click_add_video(self) -> None:
-        """Клик по кнопке старта загрузки (testid или видимый текст)."""
+        """Один клик по кнопке старта загрузки (без повторов)."""
         assert self.page
         target = await self._find_add_video_button(timeout_ms=20000)
         if target is None:
             raise RuntimeError("Кнопка «Добавить ролик» не найдена")
-        await target.click(timeout=8000)
+        await self._human_click(target, timeout=8000)
 
-    async def _open_upload_popup(self):
-        """Открывает popup кабинета автора и ждёт готовности."""
-        assert self.page
+    async def _open_upload_page(self):
+        """Открыть форму загрузки в ОДНОЙ вкладке.
+
+        Раньше: click «Добавить ролик» → popup cabinet, а при сбое expect_popup
+        клик повторялся → вторая вкладка (похоже на взлом для антифрода VK).
+
+        Теперь: прямой goto cabinet URL в той же вкладке. Popup — только fallback
+        и строго один клик, без повторного.
+        """
+        assert self.page and self.context
+        before_pages = set(self.context.pages)
+
+        # 1) Предпочтительный путь — одна вкладка
+        logger.info("Upload: same-tab → cabinet showUploader")
+        await self._human_pause(0.8, 1.6)
         try:
-            async with self.page.expect_popup(timeout=45000) as popup_info:
-                await self._click_add_video()
-            upload_page = await popup_info.value
-            logger.info("Popup upload: %s", upload_page.url)
-        except Exception as exc:
-            logger.info("Popup не пойман (%s) — текущая вкладка", exc)
-            upload_page = self.page
+            await self.page.goto(self.CABINET_UPLOAD_URL, wait_until="domcontentloaded", timeout=90000)
+            await self._human_pause(1.2, 2.4)
             try:
-                await self._click_add_video()
+                await self.page.wait_for_load_state("networkidle", timeout=20000)
             except Exception:
                 pass
-            await self.page.wait_for_timeout(1500)
+            # Если UI загрузчика уже есть — готово
+            if (
+                await self.page.get_by_test_id("video_upload_select_file").count() > 0
+                or await self.page.locator('input[type="file"]').count() > 0
+                or await self.page.locator("span").filter(has_text="Выбрать файл").count() > 0
+            ):
+                await self._close_extra_pages(self.page)
+                logger.info("Upload page (same-tab): %s", self.page.url)
+                return self.page
+        except Exception as exc:
+            logger.warning("same-tab cabinet goto failed: %s — fallback click once", exc)
+
+        # 2) Fallback: один клик, ждём popup ИЛИ новую страницу в context
+        pages_before = list(self.context.pages)
+        upload_page = None
+        try:
+            async with self.page.expect_popup(timeout=20000) as popup_info:
+                await self._click_add_video()
+            upload_page = await popup_info.value
+            logger.info("Popup upload (single click): %s", upload_page.url)
+        except Exception as exc:
+            logger.info("Popup не пойман после одного клика (%s) — ищу новую вкладку", exc)
+            await self._human_pause(1.0, 2.0)
+            # НЕ кликаем второй раз — смотрим, не появилась ли уже вкладка
+            for p in self.context.pages:
+                if p not in pages_before and not p.is_closed():
+                    upload_page = p
+                    logger.info("Новая вкладка без второго клика: %s", p.url)
+                    break
+            if upload_page is None:
+                upload_page = self.page
+                logger.info("Остаёмся на текущей вкладке: %s", self.page.url)
+
         try:
             await upload_page.wait_for_load_state("domcontentloaded", timeout=60000)
         except Exception:
             pass
+        await self._human_pause(1.0, 2.0)
+        await self._close_extra_pages(upload_page)
+        # На всякий случай забываем «лишние» pages, открытые до клика, кроме keep
+        for p in list(before_pages):
+            if p is upload_page or p.is_closed():
+                continue
+            # не трогаем — уже закрыли в _close_extra_pages
         return upload_page
 
     async def _wait_upload_ui_ready(self, page, *, timeout_sec: int = 90) -> None:
@@ -408,14 +513,16 @@ class VkVideoClient:
             return False
 
         await self.screenshot("step1_upload_page")
+        await self._human_pause(0.9, 1.8)
 
-        # 1) «Добавить ролик» → popup (как в codegen)
-        upload_page = await self._open_upload_popup()
+        # 1) Форма загрузки в ОДНОЙ вкладке (без двойного popup)
+        upload_page = await self._open_upload_page()
         if upload_page is None:
             return False
 
         upload_page.set_default_timeout(self.timeout)
         await self._wait_upload_ui_ready(upload_page)
+        await self._human_pause(0.8, 1.5)
         await upload_page.screenshot(
             path=str(_SHOT_DIR / f"step2_picker_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
         )
@@ -428,8 +535,9 @@ class VkVideoClient:
             logger.error("Не удалось прикрепить видео (нет input / filechooser)")
             return False
         logger.info("video set (no file dialog): %s", video_path.name)
-        await upload_page.wait_for_timeout(2500)
+        await self._human_pause(2.0, 3.5)
         await self._close_extra_modal(upload_page)
+        await self._human_pause(0.6, 1.2)
 
         # 3) Ждём форму описания клипа
         desc = upload_page.get_by_test_id("clips-upload-description")
@@ -451,10 +559,9 @@ class VkVideoClient:
             return False
 
         text = self._compose_description(title=title, description=description, tags=tags)
-        await desc.click()
-        await desc.fill(text)
+        await self._human_type(desc, text)
         logger.info("description filled (%s chars)", len(text))
-        await upload_page.wait_for_timeout(800)
+        await self._human_pause(0.8, 1.6)
 
         # 4) Ждём окончание обработки — иначе обложка недоступна
         #    Текст на форме: «Выбор обложки будет доступен после обработки клипа»
@@ -465,23 +572,25 @@ class VkVideoClient:
             cover_ok = await self._attach_cover(upload_page, cover_path)
             if cover_ok:
                 logger.info("cover set (no file dialog): %s", cover_path.name)
-                await upload_page.wait_for_timeout(1500)
+                await self._human_pause(1.2, 2.2)
             else:
                 logger.warning("Обложку не удалось прикрепить — публикую кадр по умолчанию")
 
         # 6) «Кнопка действия» — включить (Открыть канал в мессенджере)
         if self.enable_action_button:
+            await self._human_pause(0.5, 1.1)
             ok = await self._enable_action_button(upload_page)
             if not ok and self.toggle_first_switch:
                 try:
                     handle = upload_page.locator(".vkuiSwitch__handle").first
                     if await handle.count() > 0 and await handle.is_visible():
-                        await handle.click(timeout=3000)
+                        await self._human_click(handle, timeout=3000)
                         logger.info("fallback: toggled first vkuiSwitch")
-                        await upload_page.wait_for_timeout(400)
+                        await self._human_pause(0.4, 0.9)
                 except Exception as exc:
                     logger.debug("switch fallback skip: %s", exc)
 
+        await self._human_pause(0.7, 1.4)
         await upload_page.screenshot(
             path=str(_SHOT_DIR / f"step4_before_publish_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
         )
@@ -525,10 +634,11 @@ class VkVideoClient:
                 )
                 logger.error("Кнопка «Опубликовать» так и не стала активной")
                 return False
-            await pub.click()
+            await self._human_pause(0.6, 1.3)
+            await self._human_click(pub)
             logger.info("clicked publish")
 
-        await upload_page.wait_for_timeout(12000)
+        await self._human_pause(8.0, 12.0)
         await upload_page.screenshot(
             path=str(_SHOT_DIR / f"step5_after_publish_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
         )

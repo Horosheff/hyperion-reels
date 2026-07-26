@@ -96,6 +96,8 @@
 
 - **`jump_cuts` с `from`/`to` не резались:** montage-plan пишет jump cuts как `from`/`to`, а `cut_clips.py` раньше читал только `start`/`end` → silent skip всех jump cuts. Fix: принимать оба варианта ключей; после фикса перерезать KEEP.
 
+- **VK две вкладки / «взлом»:** `_open_upload_popup` кликал «Добавить ролик», ловил popup; при сбое `expect_popup` кликал **ещё раз** → вторая вкладка cabinet. Антифрод VK это воспринимает плохо. Fix: same-tab `cabinet...?showUploader=1`, один клик max, закрытие лишних вкладок, humanize-паузы (`VK_HUMANIZE=1`).
+
 - **Ложный OPEN_INCIDENTS:** (1) regex `incident_report:\s*(?!none\b).+` из‑за backtracking матчит `none`; (2) упоминание `incident_report:` внутри prose durable_fix тоже триггерит. В `scripts/incident_queue.py` считать только field-строки `(?m)^(?:\s*[-*]\s*)?incident_report:\s*(\S+)` и value != `none`; `status: open` — только целая строка.
 
 
