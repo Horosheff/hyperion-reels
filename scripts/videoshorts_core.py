@@ -1572,7 +1572,7 @@ LAYOUT_MODES = ("regular", "webinar", "podcast", "sales")
 
 
 def normalize_layout_mode(value: object) -> str:
-    mode = str(value or "regular").strip().lower()
+    mode = str(value or "webinar").strip().lower()
     aliases = {
         "normal": "regular",
         "face": "regular",
@@ -1585,7 +1585,7 @@ def normalize_layout_mode(value: object) -> str:
         "podcast_track": "podcast",
     }
     mode = aliases.get(mode, mode)
-    return mode if mode in LAYOUT_MODES else "regular"
+    return mode if mode in LAYOUT_MODES else "webinar"
 
 
 def metadata_profile_for_layout(layout: str) -> str:
@@ -1594,7 +1594,7 @@ def metadata_profile_for_layout(layout: str) -> str:
         "webinar": "webinar",
         "podcast": "podcast",
         "sales": "sales",
-    }.get(normalize_layout_mode(layout), "education")
+    }.get(normalize_layout_mode(layout), "webinar")
 
 
 def create_layout_clip(

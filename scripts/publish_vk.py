@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Публикация клипа в Яндекс Дзен через встроенный Playwright dzen_client.
+"""Публикация клипа в VK Видео (vkvideo.ru/@kov4eg_ai) через Playwright vk_client.
 
-Всё внутри плагина Гиперион:
-  scripts/dzen_client.py
-  videoshorts-memory/secrets/dzen_storage_state.json
-  videoshorts.local.env (секреты, не в git)
+Зеркало publish_dzen.py:
+  scripts/vk_client.py
+  videoshorts-memory/secrets/vk_storage_state.json
+  videoshorts.local.env → VK_CHANNEL_NAME / VK_CHANNEL_URL
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -23,9 +22,8 @@ from videoshorts_core import configure_stdio
 configure_stdio()
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DZEN_CLIENT = PLUGIN_ROOT / "scripts" / "dzen_client.py"
-DEFAULT_DZEN_CWD = PLUGIN_ROOT
-DEFAULT_STORAGE = PLUGIN_ROOT / "videoshorts-memory" / "secrets" / "dzen_storage_state.json"
+DEFAULT_VK_CLIENT = PLUGIN_ROOT / "scripts" / "vk_client.py"
+DEFAULT_STORAGE = PLUGIN_ROOT / "videoshorts-memory" / "secrets" / "vk_storage_state.json"
 
 
 def _load_local_env(root: Path) -> dict[str, str]:
@@ -60,37 +58,40 @@ def _write_json(path: Path, data: dict) -> None:
 def resolve_config(plugin_root: Path = PLUGIN_ROOT) -> dict:
     local = _load_local_env(plugin_root)
     client = Path(
-        local.get("VIDEOSHORTS_DZEN_CLIENT")
-        or os.environ.get("VIDEOSHORTS_DZEN_CLIENT")
-        or DEFAULT_DZEN_CLIENT
+        local.get("VIDEOSHORTS_VK_CLIENT")
+        or os.environ.get("VIDEOSHORTS_VK_CLIENT")
+        or DEFAULT_VK_CLIENT
     )
     if not client.is_absolute():
         client = (plugin_root / client).resolve()
-    cwd = Path(
-        local.get("VIDEOSHORTS_DZEN_CWD")
-        or os.environ.get("VIDEOSHORTS_DZEN_CWD")
-        or DEFAULT_DZEN_CWD
-    )
-    if not cwd.is_absolute():
-        cwd = (plugin_root / cwd).resolve()
     storage = Path(
-        local.get("STORAGE_STATE")
-        or os.environ.get("STORAGE_STATE")
-        or local.get("VIDEOSHORTS_DZEN_STORAGE")
-        or os.environ.get("VIDEOSHORTS_DZEN_STORAGE")
+        local.get("VIDEOSHORTS_VK_STORAGE")
+        or os.environ.get("VIDEOSHORTS_VK_STORAGE")
+        or local.get("VK_STORAGE_STATE")
+        or os.environ.get("VK_STORAGE_STATE")
         or DEFAULT_STORAGE
     )
     if not storage.is_absolute():
         storage = (plugin_root / storage).resolve()
     storage.parent.mkdir(parents=True, exist_ok=True)
+    channel = (
+        local.get("VK_CHANNEL_NAME")
+        or os.environ.get("VK_CHANNEL_NAME")
+        or "kov4eg_ai"
+    ).lstrip("@")
+    channel_url = (
+        local.get("VK_CHANNEL_URL")
+        or os.environ.get("VK_CHANNEL_URL")
+        or f"https://vkvideo.ru/@{channel}"
+    )
     return {
         "client": client,
-        "cwd": cwd,
+        "cwd": plugin_root,
         "storage": storage,
         "has_cookies": storage.is_file() and storage.stat().st_size > 100,
         "client_ok": client.is_file(),
-        "channel": local.get("DZEN_CHANNEL_NAME") or os.environ.get("DZEN_CHANNEL_NAME") or "",
-        "channel_url": local.get("DZEN_CHANNEL_URL") or os.environ.get("DZEN_CHANNEL_URL") or "",
+        "channel": channel,
+        "channel_url": channel_url,
         "plugin_root": str(plugin_root.resolve()),
     }
 
@@ -98,29 +99,22 @@ def resolve_config(plugin_root: Path = PLUGIN_ROOT) -> dict:
 def build_env(cfg: dict) -> dict[str, str]:
     env = os.environ.copy()
     env["HEADLESS"] = "false"
-    # Не оставлять Chromium открытым — иначе Results UI ждёт ответа вечно
     env["KEEP_BROWSER_OPEN"] = "false"
     env["VIDEOSHORTS_FORCE_CLOSE_BROWSER"] = "1"
-    env["STORAGE_STATE"] = str(Path(cfg["storage"]).resolve())
+    env["VIDEOSHORTS_VK_STORAGE"] = str(Path(cfg["storage"]).resolve())
+    env["VK_STORAGE_STATE"] = str(Path(cfg["storage"]).resolve())
     local = _load_local_env(PLUGIN_ROOT)
-    for key in (
-        "DZEN_LOGIN",
-        "DZEN_PASSWORD",
-        "DZEN_CHANNEL_NAME",
-        "DZEN_CHANNEL_URL",
-        "KIE_API_KEY",
-    ):
+    for key in ("VK_CHANNEL_NAME", "VK_CHANNEL_URL", "VIDEOSHORTS_VK_CHANNEL", "KIE_API_KEY"):
         if local.get(key):
             env[key] = local[key]
     if cfg.get("channel"):
-        env["DZEN_CHANNEL_NAME"] = str(cfg["channel"])
+        env["VK_CHANNEL_NAME"] = str(cfg["channel"])
     if cfg.get("channel_url"):
-        env["DZEN_CHANNEL_URL"] = str(cfg["channel_url"])
+        env["VK_CHANNEL_URL"] = str(cfg["channel_url"])
     return env
 
 
-def _normalize_tags(raw: object, *, limit: int = 5) -> list[str]:
-    """Список тегов без #, без дублей. Дзен: максимум 5 чипов."""
+def _normalize_tags(raw: object, *, limit: int = 10) -> list[str]:
     items: list[Any] = []
     if isinstance(raw, list):
         items = raw
@@ -142,37 +136,26 @@ def _normalize_tags(raw: object, *, limit: int = 5) -> list[str]:
     return out
 
 
-def _tags_from_meta(meta: dict) -> str:
-    cleaned = _normalize_tags(meta.get("hashtags") or meta.get("tags") or meta.get("seo_keywords") or [])
-    return ", ".join(cleaned)
-
-
 def _collect_hashtags(*sources: object) -> list[str]:
     for src in sources:
-        tags = _normalize_tags(src, limit=5)
+        tags = _normalize_tags(src, limit=10)
         if tags:
             return tags
     return []
 
 
-def _zen_payload_from_item(item: dict, clips_dir: Path, index: int) -> dict:
+def _vk_payload_from_item(item: dict, clips_dir: Path, index: int) -> dict:
     platforms = item.get("platforms") if isinstance(item.get("platforms"), dict) else {}
-    for key in ("zen", "youtube", "instagram", "tiktok", "telegram", "vk"):
+    for key in ("vk", "zen", "youtube", "tiktok", "instagram"):
         job = platforms.get(key)
         if not isinstance(job, dict):
             continue
         payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
         if not payload:
             continue
-        tags = _collect_hashtags(
-            payload.get("hashtags"),
-            payload.get("tags"),
-            payload.get("seo_keywords"),
-        )
+        tags = _collect_hashtags(payload.get("hashtags"), payload.get("tags"), payload.get("seo_keywords"))
         title = str(payload.get("title") or "").strip()
-        description = str(
-            payload.get("description") or payload.get("caption") or ""
-        ).strip()
+        description = str(payload.get("description") or payload.get("caption") or "").strip()
         if title or description or tags:
             return {
                 "title": title or str(item.get("title") or f"clip_{index:02d}"),
@@ -181,18 +164,13 @@ def _zen_payload_from_item(item: dict, clips_dir: Path, index: int) -> dict:
             }
 
     meta = _read_json(clips_dir / "metadata" / f"clip_{index:02d}.metadata.json")
-    yt = (meta.get("platforms") or {}).get("youtube") if isinstance(meta.get("platforms"), dict) else {}
-    if not isinstance(yt, dict):
-        yt = {}
-    tags = _collect_hashtags(
-        meta.get("hashtags"),
-        yt.get("hashtags"),
-        meta.get("seo_keywords"),
-        item.get("seo_keywords"),
-    )
+    vk = (meta.get("platforms") or {}).get("vk") if isinstance(meta.get("platforms"), dict) else {}
+    if not isinstance(vk, dict):
+        vk = {}
+    tags = _collect_hashtags(meta.get("hashtags"), vk.get("hashtags"), meta.get("seo_keywords"), item.get("seo_keywords"))
     return {
-        "title": str(meta.get("title") or item.get("title") or f"clip_{index:02d}"),
-        "description": str(meta.get("description") or yt.get("description") or ""),
+        "title": str(vk.get("title") or meta.get("title") or item.get("title") or f"clip_{index:02d}"),
+        "description": str(vk.get("description") or meta.get("description") or ""),
         "hashtags": tags,
     }
 
@@ -223,37 +201,33 @@ def _clip_payload(clips_dir: Path, index: int) -> dict:
     if not base.get("title") and cover.get("cover_text"):
         base["title"] = cover.get("cover_text")
 
-    zen_payload = _zen_payload_from_item(base, clips_dir, index)
+    vk_payload = _vk_payload_from_item(base, clips_dir, index)
     platforms = base.get("platforms") if isinstance(base.get("platforms"), dict) else {}
     platforms = dict(platforms)
-    zen_job = platforms.get("zen") if isinstance(platforms.get("zen"), dict) else {
+    vk_job = platforms.get("vk") if isinstance(platforms.get("vk"), dict) else {
         "status": "pending",
-        "adapter": "playwright:dzen",
+        "adapter": "playwright:vk",
     }
-    zen_job = dict(zen_job)
-    prev_payload = zen_job.get("payload") if isinstance(zen_job.get("payload"), dict) else {}
-    zen_job["payload"] = {
+    vk_job = dict(vk_job)
+    prev_payload = vk_job.get("payload") if isinstance(vk_job.get("payload"), dict) else {}
+    vk_job["payload"] = {
         **prev_payload,
-        **zen_payload,
-        "hashtags": zen_payload.get("hashtags")
-        or _collect_hashtags(prev_payload.get("hashtags")),
+        **vk_payload,
+        "hashtags": vk_payload.get("hashtags") or _collect_hashtags(prev_payload.get("hashtags")),
     }
-    platforms["zen"] = zen_job
+    platforms["vk"] = vk_job
     base["platforms"] = platforms
     if not base.get("title"):
-        base["title"] = zen_payload.get("title")
+        base["title"] = vk_payload.get("title")
     return base
 
 
-def run_dzen_client(cfg: dict, args: list[str], *, log_path: Path | None = None) -> dict:
+def run_vk_client(cfg: dict, args: list[str], *, log_path: Path | None = None) -> dict:
     client = Path(cfg["client"])
     if not client.is_file():
         return {
             "ok": False,
-            "error": (
-                f"dzen_client not found: {client}. "
-                "Ожидается scripts/dzen_client.py внутри плагина Гиперион."
-            ),
+            "error": f"vk_client not found: {client}",
         }
     cmd = [sys.executable, str(client), *args]
     started = datetime.now(timezone.utc).isoformat()
@@ -266,38 +240,9 @@ def run_dzen_client(cfg: dict, args: list[str], *, log_path: Path | None = None)
         encoding="utf-8",
         errors="replace",
     )
-    combined = f"{result.stdout or ''}\n{result.stderr or ''}"
-    # 400 до успешного 200 (капча/retry) — не считаем fail, если есть подтверждение
-    has_publish_ok = (
-        "Публикация подтверждена" in combined
-        or "РОЛИК УСПЕШНО ЗАГРУЖЕН" in combined
-        or "video_publish_success" in combined
-        or bool(
-            re.search(
-                r"\[DZEN API\] 200 https://dzen\.ru/editor-api/v2/update-publication-content-and-publish",
-                combined,
-            )
-        )
-    )
-    false_ok = result.returncode == 0 and (
-        (
-            "Публикация отклонена API" in combined
-            or "Модалка «Публикация ролика» всё ещё открыта" in combined
-            or "Нет подтверждения публикации" in combined
-            or "Загрузка не удалась" in combined
-        )
-        and not has_publish_ok
-    )
-    # Старый баг: returncode 0 при 400 без реального успеха
-    if result.returncode == 0 and "update-publication-content-and-publish 400" in combined and not has_publish_ok:
-        false_ok = True
-    ok = result.returncode == 0 and not false_ok
-    # Клиент мог выйти 0 при реальном успехе после 400→200, а guard раньше помечал fail
-    if result.returncode != 0 and has_publish_ok and "Загрузка не удалась" not in combined:
-        ok = True
     payload = {
-        "ok": ok,
-        "returncode": 0 if ok else (result.returncode or 1),
+        "ok": result.returncode == 0,
+        "returncode": result.returncode,
         "started_at": started,
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "cmd": cmd[1:],
@@ -305,13 +250,7 @@ def run_dzen_client(cfg: dict, args: list[str], *, log_path: Path | None = None)
         "stderr": (result.stderr or "")[-4000:],
         "storage": str(Path(cfg["storage"]).resolve()),
         "client": str(client.resolve()),
-        "cwd": str(Path(cfg["cwd"]).resolve()),
         "has_cookies_after": Path(cfg["storage"]).is_file() and Path(cfg["storage"]).stat().st_size > 100,
-        "error": (
-            "Dzen API/UI rejected publish (false success guarded)"
-            if false_ok
-            else None
-        ),
     }
     if log_path is not None:
         _write_json(log_path, payload)
@@ -322,32 +261,33 @@ def status_payload(clips_dir: Path | None = None) -> dict:
     cfg = resolve_config()
     last_log = {}
     if clips_dir and clips_dir.is_dir():
-        last_log = _read_json(clips_dir / "dzen-publish-log.json")
+        last_log = _read_json(clips_dir / "vk-publish-log.json")
     return {
         "ok": True,
         "client_ok": cfg["client_ok"],
         "client": str(cfg["client"]),
-        "cwd": str(cfg["cwd"]),
         "storage": str(cfg["storage"]),
         "has_cookies": cfg["has_cookies"],
         "channel": cfg.get("channel") or None,
         "channel_url": cfg.get("channel_url") or None,
         "channel_configured": bool(cfg["channel"]),
-        "bundled": Path(cfg["client"]).resolve() == DEFAULT_DZEN_CLIENT.resolve(),
+        "bundled": Path(cfg["client"]).resolve() == DEFAULT_VK_CLIENT.resolve(),
         "last": {
             "ok": last_log.get("ok"),
             "finished_at": last_log.get("finished_at"),
             "index": last_log.get("index"),
             "mode": last_log.get("mode"),
             "error": last_log.get("error"),
-        } if last_log else None,
+        }
+        if last_log
+        else None,
     }
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="VideoShorts → Яндекс Дзен (bundled Playwright)")
+    parser = argparse.ArgumentParser(description="VideoShorts → VK Video (bundled Playwright)")
     parser.add_argument("clips_dir", type=Path, nargs="?", default=None)
-    parser.add_argument("--index", type=int, default=None, help="Индекс клипа для публикации")
+    parser.add_argument("--index", type=int, default=None)
     parser.add_argument("--login-only", action="store_true")
     parser.add_argument("--draft", action="store_true")
     parser.add_argument("--status", action="store_true")
@@ -359,14 +299,36 @@ def main() -> None:
         return
 
     if args.login_only:
+        # Предпочитаем отдельный login-скрипт (свежий контекст)
+        login_script = PLUGIN_ROOT / "scripts" / "vk_login_save.py"
         log_path = (
-            (args.clips_dir / "dzen-publish-log.json")
+            (args.clips_dir / "vk-publish-log.json")
             if args.clips_dir
-            else PLUGIN_ROOT / "videoshorts-memory" / "output" / "dzen-login-log.json"
+            else PLUGIN_ROOT / "videoshorts-memory" / "output" / "vk-login-log.json"
         )
-        print("🔐 Дзен: открываю браузер для входа (Playwright headed)…")
-        result = run_dzen_client(cfg, ["--login-only"], log_path=log_path)
-        result["mode"] = "login_only"
+        print("🔐 VK Video: открываю браузер для входа…")
+        if login_script.is_file():
+            proc = subprocess.run(
+                [sys.executable, str(login_script)],
+                cwd=str(PLUGIN_ROOT),
+                env=build_env(cfg),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            result = {
+                "ok": proc.returncode == 0,
+                "returncode": proc.returncode,
+                "stdout": (proc.stdout or "")[-8000:],
+                "stderr": (proc.stderr or "")[-4000:],
+                "mode": "login_only",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "storage": str(cfg["storage"]),
+            }
+        else:
+            result = run_vk_client(cfg, ["--login-only"], log_path=None)
+            result["mode"] = "login_only"
         _write_json(log_path, result)
         if result["ok"]:
             print("✅ Cookies сохранены:", cfg["storage"])
@@ -386,11 +348,11 @@ def main() -> None:
     item = _clip_payload(clips_dir, args.index)
     video = item.get("video")
     cover = item.get("cover")
-    zen_job = (item.get("platforms") or {}).get("zen") or {}
-    payload = zen_job.get("payload") or {}
+    vk_job = (item.get("platforms") or {}).get("vk") or {}
+    payload = vk_job.get("payload") or {}
     title = str(payload.get("title") or item.get("title") or f"clip_{args.index:02d}")
     description = str(payload.get("description") or payload.get("caption") or "")
-    tag_list = _normalize_tags(payload.get("hashtags") or [], limit=5)
+    tag_list = _normalize_tags(payload.get("hashtags") or [], limit=10)
     tags = ", ".join(tag_list)
 
     if not video or not Path(video).is_file():
@@ -401,7 +363,6 @@ def main() -> None:
         sys.exit(4)
 
     cli = [
-        "--no-auto",
         "--video", str(video),
         "--title", title,
         "--description", description,
@@ -409,22 +370,19 @@ def main() -> None:
     ]
     if tags:
         cli.extend(["--tags", tags])
-    else:
-        print("[WARN] Теги пустые — проверьте metadata.hashtags / platforms.*.hashtags", file=sys.stderr)
     if args.draft:
         cli.append("--draft")
 
-    log_path = clips_dir / "dzen-publish-log.json"
-    print(f"📤 Дзен: clip_{args.index:02d} → {Path(video).name}")
-    print(f"🏷 Теги ({len(tag_list)}): {tags or '—'}")
-    print(f"📦 client={cfg['client']}")
-    result = run_dzen_client(cfg, cli, log_path=None)
+    log_path = clips_dir / "vk-publish-log.json"
+    print(f"📤 VK Video: clip_{args.index:02d} → @{cfg['channel']} · {Path(video).name}")
+    result = run_vk_client(cfg, cli, log_path=None)
     result["mode"] = "draft" if args.draft else "publish"
     result["index"] = args.index
     result["video"] = str(video)
     result["cover"] = str(cover)
     result["title"] = title
     result["tags_sent"] = tag_list
+    result["channel"] = cfg["channel"]
     _write_json(log_path, result)
 
     queue_path = clips_dir / "publish-queue.json"
@@ -432,18 +390,21 @@ def main() -> None:
     for entry in queue.get("items") or []:
         if isinstance(entry, dict) and int(entry.get("index", -1)) == args.index:
             platforms = entry.setdefault("platforms", {})
-            zen = platforms.setdefault("zen", {"adapter": "playwright:dzen", "payload": {}})
-            zen["status"] = "published" if result["ok"] and not args.draft else ("draft" if result["ok"] else "failed")
-            zen["updated_at"] = datetime.now(timezone.utc).isoformat()
-            zen["log"] = str(log_path.resolve())
+            vk = platforms.setdefault("vk", {"adapter": "playwright:vk", "payload": {}})
+            vk["status"] = (
+                "published" if result["ok"] and not args.draft else ("draft" if result["ok"] else "failed")
+            )
+            vk["updated_at"] = datetime.now(timezone.utc).isoformat()
+            vk["log"] = str(log_path.resolve())
             break
     if queue:
         _write_json(queue_path, queue)
 
     if result["ok"]:
-        print("✅ Дзен:", "черновик" if args.draft else "опубликовано")
+        print("✅ VK Video:", "черновик" if args.draft else "опубликовано")
         try:
             from videoshorts_core import write_latest_results
+
             write_latest_results(clips_dir, status="PASS")
         except Exception as exc:
             print(f"[WARN] latest-results: {exc}", file=sys.stderr)

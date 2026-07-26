@@ -47,7 +47,22 @@ async def run_manual_login(*, timeout_sec: int = 600) -> int:
     print("=" * 50)
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False, args=["--start-maximized"])
+        try:
+            # scripts/ is cwd or on path when run from plugin
+            import sys
+            from pathlib import Path
+
+            scripts = Path(__file__).resolve().parent
+            if str(scripts) not in sys.path:
+                sys.path.insert(0, str(scripts))
+            from playwright_display import describe_placement, headed_launch_args
+
+            launch_args = headed_launch_args()
+            print(f"Display: {describe_placement()}")
+        except Exception as exc:
+            print(f"[WARN] playwright_display: {exc}")
+            launch_args = ["--start-maximized"]
+        browser = await p.chromium.launch(headless=False, args=launch_args)
         context = await browser.new_context(viewport=None)
         page = await context.new_page()
         await page.goto(studio_url, wait_until="domcontentloaded", timeout=120000)

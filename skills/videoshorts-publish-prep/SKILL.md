@@ -1,6 +1,6 @@
 ---
 name: videoshorts-publish-prep
-description: Selection → covers → publish-queue; Дзен через publish_dzen.py (Playwright).
+description: Selection → covers → publish-queue; Дзен/VK/RuTube/TikTok параллельно из Results UI.
 ---
 
 # VideoShorts Publish Prep
@@ -8,13 +8,14 @@ description: Selection → covers → publish-queue; Дзен через publish
 ## Роль
 
 Собирает финальный пакет к публикации после ручного выбора клипов.
-Дзен публикуется из Results UI кнопкой (`publish_dzen.py` → **bundled** `scripts/dzen_client.py`).
-Cookies: `videoshorts-memory/secrets/dzen_storage_state.json` (не в git).
+Публикация из Results UI: **«Опубликовать (по галочкам)»** → `/api/publish-platforms` стартует **все отмеченные платформы параллельно** (Дзен / VK / RuTube / TikTok).
+
+Cookies: `videoshorts-memory/secrets/*_storage_state.json` (не в git).
 
 ## Шаги
 
 1. Убедиться, что есть `metadata-manifest.json` (иначе metadata-writer).
-2. Прочитать `publish-selection.json` (галочки; платформы включают `vk`, `zen`).
+2. Прочитать `publish-selection.json` (галочки; платформы включают `zen`, `vk`, `rutube`, `tiktok`).
 3. Covers (только selected):
 
 ```bash
@@ -28,20 +29,28 @@ python prepare_covers.py "../videoshorts-memory/output/clips/<stem>" --mode auto
 python prepare_publish_queue.py "../videoshorts-memory/output/clips/<stem>"
 ```
 
-5. `publish-queue.json` → `READY_TO_PUBLISH`; `zen.adapter = playwright:dzen`.
+5. `publish-queue.json` → `READY_TO_PUBLISH`.
 
-6. Дзен (человек в UI или CLI):
+6. UI: отметить платформы → **Опубликовать (по галочкам)** (параллельно).
+
+CLI (по одной платформе, если нужно):
 
 ```bash
 python publish_dzen.py --login-only
 python publish_dzen.py "../videoshorts-memory/output/clips/<stem>" --index N
+python publish_vk.py "../videoshorts-memory/output/clips/<stem>" --index N
+python publish_rutube.py "../videoshorts-memory/output/clips/<stem>" --index N
+python publish_tiktok.py "../videoshorts-memory/output/clips/<stem>" --index N
 ```
 
-## Не делать сейчас
+## Важно
 
-Не публиковать YouTube/Instagram/TikTok/VK API — только Дзен Playwright.
-Не копировать секреты в handoff/fragment.
+- RuTube: в модалке обложки обязателен таб **Shorts** (`rutube_client._select_cover_shorts_tab`).
+- TikTok: после Post нажать второе **Опубликовать** в диалоге «Продолжить публикацию?» (`tiktok_client._confirm_publish_dialog`).
+- Параллельный запуск: `ui_server.py` → `ThreadPoolExecutor` по отмеченным платформам.
 
-## Fragment
+## Не делать
 
-`videoshorts-memory/fragments/publish-prep.md` + `incident_report`.
+Не публиковать через внешние API YouTube/Instagram/Telegram — только Playwright-адаптеры выше.
+
+Playwright всегда на мониторе из `PLAYWRIGHT_MONITOR` (default **1 = правый**). См. `docs/PLAYWRIGHT-DISPLAY.md`.

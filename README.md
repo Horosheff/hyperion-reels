@@ -89,7 +89,8 @@ flowchart LR
 
 Подробная схема: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
 Роли агентов: [`docs/AGENTS.md`](docs/AGENTS.md)  
-Публикация (SEO → галочки → обложки → очередь): [`docs/PUBLISH.md`](docs/PUBLISH.md)
+Публикация (SEO → галочки → обложки → очередь): [`docs/PUBLISH.md`](docs/PUBLISH.md)  
+Монитор Playwright (по умолчанию №1 = правый): [`docs/PLAYWRIGHT-DISPLAY.md`](docs/PLAYWRIGHT-DISPLAY.md)
 
 ### Пайплайн одной строкой
 

@@ -50,7 +50,7 @@ TEMPLATES: dict[str, SubtitleTemplate] = {
     "default": SubtitleTemplate(),
     "mrbeast": SubtitleTemplate(
         name="mrbeast", font="Impact", font_size=52,
-        primary_color="#FFFFFF", highlight_color="#FFFF00",
+        primary_color="#FFFFFF", highlight_color="#FFFFFF",
         outline_width=4, bold=True, uppercase=True,
         margin_v=120, animation="karaoke", words_per_line=3,
     ),

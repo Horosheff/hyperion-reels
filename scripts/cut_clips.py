@@ -26,9 +26,9 @@ def main() -> None:
     parser.add_argument("--top-ratio", type=float, default=0.30)
     parser.add_argument(
         "--layout",
-        default="regular",
+        default="webinar",
         choices=["regular", "webinar", "podcast", "sales"],
-        help="Режим кадра: regular / webinar 30-70 / podcast tracking / sales",
+        help="Режим кадра: webinar 30-70 (default) / regular / podcast tracking / sales",
     )
     parser.add_argument("--quality-preset", default="release", choices=["draft", "release"])
     parser.add_argument("--montage-plan", type=Path, default=None, help="montage-plan.json with jump/silence/filler removals")
