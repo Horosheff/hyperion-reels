@@ -606,7 +606,7 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
 
-        if path in {"/api/vk-status", "/api/rutube-status", "/api/tiktok-status"}:
+        if path in {"/api/vk-status", "/api/rutube-status", "/api/tiktok-status", "/api/instagram-status"}:
             query = parse_qs(parsed.query)
             raw_path = query.get("clips_dir", [""])[0]
             clips_dir = None
@@ -628,6 +628,9 @@ class Handler(BaseHTTPRequestHandler):
                     json_response(self, _status(clips_dir))
                 elif path == "/api/rutube-status":
                     from publish_rutube import status_payload as _status
+                    json_response(self, _status(clips_dir))
+                elif path == "/api/instagram-status":
+                    from publish_instagram import status_payload as _status
                     json_response(self, _status(clips_dir))
                 else:
                     from publish_tiktok import resolve_config as _tt_cfg
@@ -808,7 +811,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
-        if path in {"/api/vk-login", "/api/rutube-login", "/api/tiktok-login"}:
+        if path in {"/api/vk-login", "/api/rutube-login", "/api/tiktok-login", "/api/instagram-login"}:
             try:
                 length = int(self.headers.get("Content-Length", "0") or "0")
                 raw = self.rfile.read(length) if length else b"{}"
@@ -826,11 +829,13 @@ class Handler(BaseHTTPRequestHandler):
                     "/api/vk-login": "publish_vk.py",
                     "/api/rutube-login": "publish_rutube.py",
                     "/api/tiktok-login": "publish_tiktok.py",
+                    "/api/instagram-login": "publish_instagram.py",
                 }
                 label_map = {
                     "/api/vk-login": "vk",
                     "/api/rutube-login": "rutube",
                     "/api/tiktok-login": "tiktok",
+                    "/api/instagram-login": "instagram",
                 }
                 script = script_map[path]
                 label = label_map[path]
@@ -854,6 +859,9 @@ class Handler(BaseHTTPRequestHandler):
                         status = status_payload(resolved)
                     elif path == "/api/rutube-login":
                         from publish_rutube import status_payload
+                        status = status_payload(resolved)
+                    elif path == "/api/instagram-login":
+                        from publish_instagram import status_payload
                         status = status_payload(resolved)
                     else:
                         from publish_tiktok import resolve_config as _tt_cfg
@@ -948,6 +956,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/publish-vk",
             "/api/publish-rutube",
             "/api/publish-tiktok",
+            "/api/publish-instagram",
             "/api/publish-platforms",
         }:
             try:
@@ -978,6 +987,7 @@ class Handler(BaseHTTPRequestHandler):
                     "vk": "publish_vk.py",
                     "rutube": "publish_rutube.py",
                     "tiktok": "publish_tiktok.py",
+                    "instagram": "publish_instagram.py",
                 }
                 log_by_platform = {
                     "zen": "dzen-publish-log.json",
@@ -985,6 +995,7 @@ class Handler(BaseHTTPRequestHandler):
                     "vk": "vk-publish-log.json",
                     "rutube": "rutube-publish-log.json",
                     "tiktok": "tiktok-publish-log.json",
+                    "instagram": "instagram-publish-log.json",
                 }
 
                 if path == "/api/publish-platforms":
@@ -998,18 +1009,24 @@ class Handler(BaseHTTPRequestHandler):
                             key = "zen"
                         if key in script_by_platform and key not in platforms:
                             platforms.append(key)
-                    platforms = [p for p in platforms if p in {"zen", "vk", "rutube", "tiktok"}]
+                    platforms = [
+                        p for p in platforms if p in {"zen", "vk", "rutube", "tiktok", "instagram"}
+                    ]
                 else:
                     platforms = [{
                         "/api/publish-vk": "vk",
                         "/api/publish-rutube": "rutube",
                         "/api/publish-tiktok": "tiktok",
+                        "/api/publish-instagram": "instagram",
                     }[path]]
 
                 if not platforms:
                     json_response(
                         self,
-                        {"ok": False, "error": "Нет отмеченных платформ (Дзен / VK / RuTube / TikTok)"},
+                        {
+                            "ok": False,
+                            "error": "Нет отмеченных платформ (Дзен / VK / RuTube / TikTok / Instagram)",
+                        },
                         status=400,
                     )
                     return
@@ -1061,7 +1078,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 # Параллельно: все отмеченные платформы открывают браузеры одновременно
                 results_by_platform: dict[str, dict] = {}
-                workers = max(1, min(len(platforms), 4))
+                workers = max(1, min(len(platforms), 5))
                 with ThreadPoolExecutor(max_workers=workers) as pool:
                     futures = {pool.submit(_run_one, p): p for p in platforms}
                     for fut in as_completed(futures):

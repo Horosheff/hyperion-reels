@@ -19,8 +19,8 @@
 | Код (default) | `scripts/playwright_display.py` → `PLAYWRIGHT_MONITOR=1` |
 | Локальный env | `videoshorts.local.env` |
 | Шаблоны | `videoshorts.local.env.example`, `videoshorts.env.example` |
-| Клиенты | `tiktok_client`, `rutube_client`, `vk_client`, `dzen_client` |
-| Login | `*_login_save.py` (TikTok / RuTube / VK / Dzen) |
+| Клиенты | `tiktok_client`, `rutube_client`, `vk_client`, `dzen_client`, `instagram_client` |
+| Login | `*_login_save.py` (TikTok / RuTube / VK / Dzen / Instagram) |
 | Install | `install-plugin.ps1` дописывает/чинит env при установке |
 
 ## Env

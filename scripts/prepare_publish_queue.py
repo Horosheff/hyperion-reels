@@ -101,7 +101,13 @@ def main() -> None:
             if platform == "zen":
                 adapter = "playwright:dzen"
             elif platform == "vk":
-                adapter = "future:vk"
+                adapter = "playwright:vk"
+            elif platform == "rutube":
+                adapter = "playwright:rutube"
+            elif platform == "tiktok":
+                adapter = "playwright:tiktok"
+            elif platform == "instagram":
+                adapter = "playwright:instagram"
             else:
                 adapter = f"future:{platform}"
             platform_jobs[platform] = {
@@ -133,16 +139,16 @@ def main() -> None:
         "ready_count": len(items),
         "blockers": blockers,
         "items": items,
-        "platforms_supported_now": ["zen"],
-        "platforms_planned": ["youtube", "instagram", "tiktok", "telegram", "vk", "zen"],
+        "platforms_supported_now": ["zen", "vk", "rutube", "tiktok", "instagram"],
+        "platforms_planned": ["youtube", "telegram"],
         "next_step": (
-            "publish_dzen_or_adapters"
+            "publish_platforms_ui"
             if status == "READY_TO_PUBLISH"
             else ("prepare_covers" if any("cover" in b for b in blockers) else "fix_selection")
         ),
         "note": (
-            "Пакет готов. Дзен: Results → «Опубликовать в Дзен» (Playwright). "
-            "VK/YouTube/IG/TT/TG — adapters позже. Очередь содержит video + cover + SEO."
+            "Пакет готов. Results → галочки платформ → «Опубликовать (по галочкам)». "
+            "Playwright: Дзен / VK / RuTube / TikTok / Instagram. YouTube/TG — позже."
         ),
     }
     out = clips_dir / "publish-queue.json"

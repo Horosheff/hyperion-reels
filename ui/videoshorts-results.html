@@ -928,14 +928,15 @@
         clip.vk_published || clip.publish_vk_ok ? "VK" : null,
         clip.rutube_published || clip.publish_rutube_ok ? "RuTube" : null,
         clip.tiktok_published || clip.publish_tiktok_ok ? "TikTok" : null,
+        clip.instagram_published || clip.publish_instagram_ok ? "Instagram" : null,
       ].filter(Boolean);
       let zenBtn = "";
-      if (flags.length >= 4) {
+      if (flags.length >= 5) {
         zenBtn = `<div class="publish-ok-badge"><span class="dot"></span>Опубликовано · ${esc(flags.join(" + "))}</div>`;
       } else {
         const badges = flags.map((f) => `<div class="publish-ok-badge"><span class="dot"></span>${esc(f)} ✓</div>`).join("");
         const coverHint = clip.cover_ready
-          ? "Только отмеченные: Дзен / VK / RuTube / TikTok"
+          ? "Только отмеченные: Дзен / VK / RuTube / TikTok / Instagram"
           : "Обложки ещё нет — лучше сначала «Подготовить обложки», но публиковать можно";
         zenBtn = `${badges}
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
@@ -1009,7 +1010,7 @@
         <div class="card-dark">
           <div>
             <h2>Панель публикации</h2>
-            <p>Галочка клипа → платформы (Дзен / VK / RuTube / TikTok) → обложки → «Опубликовать (по галочкам)» — платформы стартуют <b>параллельно</b>.</p>
+            <p>Галочка клипа → платформы (Дзен / VK / RuTube / TikTok / Instagram) → обложки → «Опубликовать (по галочкам)» — платформы стартуют <b>параллельно</b>.</p>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" class="btn-dark" id="selectAllClips" style="background:#1e293b;">Выбрать все</button>
@@ -1019,6 +1020,7 @@
             <button type="button" class="btn-dark" id="vkLoginBtn" style="background:#2563eb;">Войти в VK</button>
             <button type="button" class="btn-dark" id="rutubeLoginBtn" style="background:#b45309;">Войти в RuTube</button>
             <button type="button" class="btn-dark" id="tiktokLoginBtn" style="background:#111827;">Войти в TikTok</button>
+            <button type="button" class="btn-dark" id="instagramLoginBtn" style="background:#db2777;">Войти в Instagram</button>
           </div>
         </div>
         <div id="publishStatus" style="margin-top:10px;font-size:13px;font-weight:var(--fw-semibold);"></div>
@@ -1044,6 +1046,7 @@
                 <label><input type="checkbox" value="vk" checked> VK</label>
                 <label><input type="checkbox" value="rutube" checked> RuTube</label>
                 <label><input type="checkbox" value="tiktok" checked> TikTok</label>
+                <label><input type="checkbox" value="instagram" checked> Instagram</label>
               </div>
               ${coverBlock(clip)}
               <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
@@ -1163,6 +1166,8 @@
       if (rutubeLogin) rutubeLogin.onclick = () => platformLoginFlow("rutube");
       const tiktokLogin = $("tiktokLoginBtn");
       if (tiktokLogin) tiktokLogin.onclick = () => platformLoginFlow("tiktok");
+      const instagramLogin = $("instagramLoginBtn");
+      if (instagramLogin) instagramLogin.onclick = () => platformLoginFlow("instagram");
       document.querySelectorAll("[data-publish-selected]").forEach((btn) => {
         btn.onclick = () => publishSelectedFlow(Number(btn.getAttribute("data-publish-selected")));
       });
@@ -1173,7 +1178,7 @@
       if (!box) return [];
       return Array.from(box.querySelectorAll("input:checked"))
         .map((el) => String(el.value || "").toLowerCase())
-        .filter((p) => ["zen", "vk", "rutube", "tiktok"].includes(p));
+        .filter((p) => ["zen", "vk", "rutube", "tiktok", "instagram"].includes(p));
     }
     async function refreshPlatformsStatus() {
       const line = $("platformsStatusLine");
@@ -1184,6 +1189,7 @@
         ["VK", "/api/vk-status"],
         ["RuTube", "/api/rutube-status"],
         ["TikTok", "/api/tiktok-status"],
+        ["Instagram", "/api/instagram-status"],
       ]) {
         try {
           const response = await fetch(`${api}${q}`);
@@ -1200,7 +1206,7 @@
       if (!isLocalBridge() || !clipsDir) return;
       const platforms = selectedPlatformsFor(index);
       if (!platforms.length) {
-        if (statusEl) statusEl.textContent = "Отметьте хотя бы одну платформу: Дзен / VK / RuTube / TikTok.";
+        if (statusEl) statusEl.textContent = "Отметьте хотя бы одну платформу: Дзен / VK / RuTube / TikTok / Instagram.";
         return;
       }
       const clipLabel = `clip_${String(index).padStart(2, "0")}`;
@@ -1238,6 +1244,7 @@
               if (okList.includes("vk")) { clip.vk_published = true; clip.publish_vk_ok = true; }
               if (okList.includes("rutube")) { clip.rutube_published = true; clip.publish_rutube_ok = true; }
               if (okList.includes("tiktok")) { clip.tiktok_published = true; clip.publish_tiktok_ok = true; }
+              if (okList.includes("instagram")) { clip.instagram_published = true; clip.publish_instagram_ok = true; }
             }
             try { render(latestData); } catch (_) {}
           }
@@ -1296,6 +1303,7 @@
         vk: { api: "/api/vk-login", title: "Вход в VK", ok: "VK" },
         rutube: { api: "/api/rutube-login", title: "Вход в RuTube", ok: "RuTube" },
         tiktok: { api: "/api/tiktok-login", title: "Вход в TikTok", ok: "TikTok" },
+        instagram: { api: "/api/instagram-login", title: "Вход в Instagram", ok: "Instagram" },
       }[platform];
       if (!meta) return;
       if (statusEl) statusEl.textContent = `Открываю браузер: ${meta.title}…`;
