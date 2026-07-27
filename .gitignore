@@ -26,10 +26,16 @@ __pycache__/
 *.pyc
 .venv/
 .venv310/
+# Local secrets / auth sessions (Playwright cookies) — keep on disk, never push
 videoshorts.local.env
 videoshorts-memory/secrets/**
+videoshorts-memory/secrets/*.json
+videoshorts-memory/secrets/*.json.bak*
 !videoshorts-memory/secrets/.gitkeep
 videoshorts-memory/output/dzen-screenshots/**
+videoshorts-memory/output/*-screenshots/**
+videoshorts-memory/output/*-login-log.json
+videoshorts-memory/output/vk-batch-publish.jsonl
 *.wav
 *.mp4
 !videoshorts-memory/samples/.gitkeep

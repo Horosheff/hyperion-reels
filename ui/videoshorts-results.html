@@ -1009,7 +1009,7 @@
         <div class="card-dark">
           <div>
             <h2>Панель публикации</h2>
-            <p>Галочка клипа → платформы (Дзен / VK / RuTube / TikTok) → обложки → «Опубликовать (по галочкам)».</p>
+            <p>Галочка клипа → платформы (Дзен / VK / RuTube / TikTok) → обложки → «Опубликовать (по галочкам)» — платформы стартуют <b>параллельно</b>.</p>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" class="btn-dark" id="selectAllClips" style="background:#1e293b;">Выбрать все</button>
@@ -1207,11 +1207,11 @@
       openCoverWait(1, {
         title: `Публикую ${clipLabel}`,
         sub: platforms.map((p) => p.toUpperCase()).join(" + "),
-        hint: "По очереди: только отмеченные платформы",
-        hints: ["Playwright…", "Обложка и описание…", "Ждём Publish…"],
+        hint: "Параллельно: все отмеченные платформы сразу",
+        hints: ["Playwright параллельно…", "Обложки и описания…", "Ждём Publish на всех…"],
         skipCoverPoll: true,
       });
-      if (statusEl) statusEl.textContent = `${clipLabel} → ${platforms.join(", ")}…`;
+      if (statusEl) statusEl.textContent = `${clipLabel} → параллельно: ${platforms.join(", ")}…`;
       try {
         const response = await fetch("/api/publish-platforms", {
           method: "POST",
