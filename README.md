@@ -5,11 +5,11 @@
 <h1 align="center">Гиперион</h1>
 
 <p align="center">
-  <strong>Субагентская система для нарезки Shorts / Reels · режимы монтажа · publish desk · Дзен</strong>
+  <strong>Субагентская система для нарезки Shorts / Reels · режимы монтажа · publish desk · YouTube · Instagram · TikTok · VK · RuTube · Дзен</strong>
 </p>
 
 <p align="center">
-  <em>Гиперион · 20+ субагентов · Cursor Agent · Whisper · FFmpeg · обложки · очередь публикации</em>
+  <em>Гиперион · 20+ субагентов · Cursor Agent · Whisper · FFmpeg · обложки · параллельная публикация</em>
 </p>
 
 <p align="center">
@@ -42,15 +42,18 @@
 
 Система не режет «по таймеру». Субагенты понимают речь, выбирают законченные мысли в диапазоне `min–max` из UI (например 30–90 с), отбраковывают слабое, уточняют границы и только потом режут, субтитруют и упаковывают.
 
-### Что нового в 0.4.4
+### Что нового в 0.4.5
 
 | Возможность | Суть |
 |-------------|------|
+| **YouTube Shorts** | Playwright Studio: recommended hashtags, теги Shift+Enter, плейлист, Public |
+| **Instagram Reels** | Playwright Reels без Windows file dialog |
+| **Мультипубликация** | Results UI: галочки → все платформы стартуют **параллельно** |
+| **TikTok / VK / RuTube / Дзен** | Встроенные Playwright-клиенты в том же «Опубликовать по галочкам» |
 | **4 режима монтажа** | Обычный · Вебинар · Подкаст · Продажи |
 | **Slim Agent P0** | Решения пишет агент (`decision_source=agent`), не эвристика |
-| **Длина клипов из brief** | `clip_count` / `min_sec` / `max_sec` — реальный контракт (spread short/mid/long) |
+| **Длина клипов из brief** | `clip_count` / `min_sec` / `max_sec` — spread short/mid/long |
 | **Publish desk** | Results UI → галочки → обложки → очередь `READY_TO_PUBLISH` |
-| **Дзен** | Встроенный Playwright-клиент: title, description, до 5 тегов-чипов, обложка |
 | **UI Гиперион** | Локальный bridge `http://127.0.0.1:8765/` — загрузка, параметры, результаты |
 
 > **20+ субагентов** работают как монтажная студия: intake, transcriber, editor, boundary-refiner, cutter, guardian, metadata, packager, cover-writer, publish-prep и другие.
@@ -84,12 +87,12 @@ flowchart LR
   G --> H[📦 Publish bundle]
   H --> I[☑️ Выбор клипов]
   I --> J[🖼 Обложки + очередь]
-  J --> K[🚀 Дзен / ручная загрузка]
+  J --> K[🚀 YouTube / IG / TikTok / VK / RuTube / Дзен]
 ```
 
 Подробная схема: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
 Роли агентов: [`docs/AGENTS.md`](docs/AGENTS.md)  
-Публикация (SEO → галочки → обложки → очередь): [`docs/PUBLISH.md`](docs/PUBLISH.md)  
+Публикация (SEO → галочки → обложки → очередь → параллельный publish): [`docs/PUBLISH.md`](docs/PUBLISH.md)  
 Монитор Playwright (по умолчанию №1 = правый): [`docs/PLAYWRIGHT-DISPLAY.md`](docs/PLAYWRIGHT-DISPLAY.md)
 
 ### Пайплайн одной строкой
@@ -97,7 +100,8 @@ flowchart LR
 ```text
 Intake → Whisper → Cleanup∥Candidates → Moments → Editor
 → Boundary(+montage) → Cutter(+loudnorm, layout) → Subtitles∥Metadata
-→ Burn → Guardian → Packager → Results UI → Covers → Publish queue → Дзен
+→ Burn → Guardian → Packager → Results UI → Covers → Publish queue
+→ YouTube∥Instagram∥TikTok∥VK∥RuTube∥Дзен
 ```
 
 Slim P0: scorekeeper / virality / dramaturg / audio-polisher / post-render — внутри editor / boundary / cutter / guardian (отдельные Task только для ремонта).

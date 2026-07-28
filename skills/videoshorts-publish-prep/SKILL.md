@@ -1,6 +1,6 @@
 ---
 name: videoshorts-publish-prep
-description: Selection → covers → publish-queue; Дзен/VK/RuTube/TikTok/Instagram параллельно из Results UI.
+description: Selection → covers → publish-queue; YouTube/Instagram/TikTok/VK/RuTube/Дзен параллельно из Results UI.
 ---
 
 # VideoShorts Publish Prep
@@ -8,7 +8,7 @@ description: Selection → covers → publish-queue; Дзен/VK/RuTube/TikTok/I
 ## Роль
 
 Собирает финальный пакет к публикации после ручного выбора клипов.
-Публикация из Results UI: **«Опубликовать (по галочкам)»** → `/api/publish-platforms` стартует **все отмеченные платформы параллельно** (Дзен / VK / RuTube / TikTok / Instagram).
+Публикация из Results UI: **«Опубликовать (по галочкам)»** → `/api/publish-platforms` стартует **все отмеченные платформы параллельно** (YouTube / Instagram / TikTok / VK / RuTube / Дзен).
 
 Cookies: `videoshorts-memory/secrets/*_storage_state.json` (не в git).
 
