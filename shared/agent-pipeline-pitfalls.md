@@ -98,6 +98,12 @@
 
 - **VK две вкладки / «взлом»:** `_open_upload_popup` кликал «Добавить ролик», ловил popup; при сбое `expect_popup` кликал **ещё раз** → вторая вкладка cabinet. Антифрод VK это воспринимает плохо. Fix: same-tab `cabinet...?showUploader=1`, один клик max, закрытие лишних вкладок, humanize-паузы (`VK_HUMANIZE=1`).
 
+- **RuTube: диалог «Сохранить часть изменений» / ранний уход:** (1) `_select_category` жал `Escape` → модалка upload схлопывалась в виджет «Загрузка видео», форма категории/обложки пропадала; (2) `_wait_processing_ready` считал `pct is None` = ready → Publish на середине «Загрузка N%» / когда «Обработка» на мгновение пропала с DOM. Fix в `rutube_client.py`: без Escape на форме; парсить и `Загрузка N%`, и `Обработка N%`; ready только после реального ≥100% (+ 2 стабильных тика); ждать после Publish; dialog handler dismiss leave-site; перед `close()` — `_wait_safe_to_leave`.
+
+- **Instagram не стартует «вместе со всеми»:** в parallel `publish-platforms` 5 Chromium открывались в одной `--window-position` → IG оказывался под Дзен/VK; плюс 5× `list_monitors()` через PowerShell на старте. Fix: Instagram первым в порядке запуска; `VIDEOSHORTS_WINDOW_SLOT` cascade; кэш мониторов; IG `viewport=None`; лог `START instagram` в ui_server.
+
+- **YouTube Studio Shorts:** `youtube_client.py` / `publish_youtube.py` / `youtube_login_save.py` + codegen. Cookies: `secrets/youtube_storage_state.json`. Results UI: YouTube в галочках по умолчанию; «Опубликовать (по галочкам)» шлёт YouTube в `/api/publish-platforms` **параллельно** с IG/TikTok/VK/RuTube/Дзен. Title-хештеги — клики по **«Рекомендуемые хештеги»** (не ручной `#` + autocomplete). Поле **Теги** — `type` + **Shift+Enter** (не смешивать с хештегами, не стирать через Ctrl+A). **Не** кликать `#checkbox-container` на Checks — это paid promotion / прямая реклама (ролики без рекламы). **Не** жать Escape на форме загрузки — закрывает модалку → черновик. Значок Shorts на части каналов только в приложении; после Publish пробуем `…/video/{id}/edit`. Обязателен клик «Поставить оценку».
+
 - **Ложный OPEN_INCIDENTS:** (1) regex `incident_report:\s*(?!none\b).+` из‑за backtracking матчит `none`; (2) упоминание `incident_report:` внутри prose durable_fix тоже триггерит. В `scripts/incident_queue.py` считать только field-строки `(?m)^(?:\s*[-*]\s*)?incident_report:\s*(\S+)` и value != `none`; `status: open` — только целая строка.
 
 

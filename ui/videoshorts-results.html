@@ -924,19 +924,20 @@
       const url = coverUrl(clip);
       const idx = clip.index;
       const flags = [
-        clip.zen_published || clip.dzen_published || clip.publish_zen_ok ? "Дзен" : null,
+        clip.youtube_published || clip.publish_youtube_ok ? "YouTube" : null,
+        clip.instagram_published || clip.publish_instagram_ok ? "Instagram" : null,
+        clip.tiktok_published || clip.publish_tiktok_ok ? "TikTok" : null,
         clip.vk_published || clip.publish_vk_ok ? "VK" : null,
         clip.rutube_published || clip.publish_rutube_ok ? "RuTube" : null,
-        clip.tiktok_published || clip.publish_tiktok_ok ? "TikTok" : null,
-        clip.instagram_published || clip.publish_instagram_ok ? "Instagram" : null,
+        clip.zen_published || clip.dzen_published || clip.publish_zen_ok ? "Дзен" : null,
       ].filter(Boolean);
       let zenBtn = "";
-      if (flags.length >= 5) {
+      if (flags.length >= 6) {
         zenBtn = `<div class="publish-ok-badge"><span class="dot"></span>Опубликовано · ${esc(flags.join(" + "))}</div>`;
       } else {
         const badges = flags.map((f) => `<div class="publish-ok-badge"><span class="dot"></span>${esc(f)} ✓</div>`).join("");
         const coverHint = clip.cover_ready
-          ? "Только отмеченные: Дзен / VK / RuTube / TikTok / Instagram"
+          ? "Только отмеченные: YouTube / Instagram / TikTok / VK / RuTube / Дзен"
           : "Обложки ещё нет — лучше сначала «Подготовить обложки», но публиковать можно";
         zenBtn = `${badges}
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
@@ -1010,12 +1011,13 @@
         <div class="card-dark">
           <div>
             <h2>Панель публикации</h2>
-            <p>Галочка клипа → платформы (Дзен / VK / RuTube / TikTok / Instagram) → обложки → «Опубликовать (по галочкам)» — платформы стартуют <b>параллельно</b>.</p>
+            <p>Галочка клипа → платформы (YouTube / Instagram / TikTok / VK / RuTube / Дзен) → обложки → «Опубликовать (по галочкам)» — платформы стартуют <b>параллельно</b>.</p>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" class="btn-dark" id="selectAllClips" style="background:#1e293b;">Выбрать все</button>
             <button type="button" class="btn-dark" id="clearAllClips" style="background:#1e293b;">Снять</button>
             <button type="button" class="btn-blue" id="preparePublish">Подготовить обложки</button>
+            <button type="button" class="btn-dark" id="youtubeLoginBtn" style="background:#dc2626;">Войти в YouTube</button>
             <button type="button" class="btn-dark" id="dzenLoginBtn" style="background:#0f766e;">Войти в Дзен</button>
             <button type="button" class="btn-dark" id="vkLoginBtn" style="background:#2563eb;">Войти в VK</button>
             <button type="button" class="btn-dark" id="rutubeLoginBtn" style="background:#b45309;">Войти в RuTube</button>
@@ -1042,11 +1044,12 @@
                 <span>Публиковать этот клип</span>
               </label>
               <div class="platforms" data-platforms-for="${esc(idx)}">
-                <label><input type="checkbox" value="zen" checked> Дзен</label>
+                <label><input type="checkbox" value="youtube" checked> YouTube</label>
+                <label><input type="checkbox" value="instagram" checked> Instagram</label>
+                <label><input type="checkbox" value="tiktok" checked> TikTok</label>
                 <label><input type="checkbox" value="vk" checked> VK</label>
                 <label><input type="checkbox" value="rutube" checked> RuTube</label>
-                <label><input type="checkbox" value="tiktok" checked> TikTok</label>
-                <label><input type="checkbox" value="instagram" checked> Instagram</label>
+                <label><input type="checkbox" value="zen" checked> Дзен</label>
               </div>
               ${coverBlock(clip)}
               <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
@@ -1158,6 +1161,8 @@
       const prepBar = $("preparePublishBar");
       if (prep) prep.onclick = preparePublishFlow;
       if (prepBar) prepBar.onclick = preparePublishFlow;
+      const youtubeLogin = $("youtubeLoginBtn");
+      if (youtubeLogin) youtubeLogin.onclick = () => platformLoginFlow("youtube");
       const dzenLogin = $("dzenLoginBtn");
       if (dzenLogin) dzenLogin.onclick = () => platformLoginFlow("dzen");
       const vkLogin = $("vkLoginBtn");
@@ -1178,7 +1183,7 @@
       if (!box) return [];
       return Array.from(box.querySelectorAll("input:checked"))
         .map((el) => String(el.value || "").toLowerCase())
-        .filter((p) => ["zen", "vk", "rutube", "tiktok", "instagram"].includes(p));
+        .filter((p) => ["zen", "vk", "rutube", "tiktok", "instagram", "youtube"].includes(p));
     }
     async function refreshPlatformsStatus() {
       const line = $("platformsStatusLine");
@@ -1186,6 +1191,7 @@
       const q = clipsDir ? `?clips_dir=${encodeURIComponent(clipsDir)}` : "";
       const parts = [];
       for (const [name, api] of [
+        ["YouTube", "/api/youtube-status"],
         ["VK", "/api/vk-status"],
         ["RuTube", "/api/rutube-status"],
         ["TikTok", "/api/tiktok-status"],
@@ -1206,7 +1212,7 @@
       if (!isLocalBridge() || !clipsDir) return;
       const platforms = selectedPlatformsFor(index);
       if (!platforms.length) {
-        if (statusEl) statusEl.textContent = "Отметьте хотя бы одну платформу: Дзен / VK / RuTube / TikTok / Instagram.";
+        if (statusEl) statusEl.textContent = "Отметьте хотя бы одну платформу: YouTube / Instagram / TikTok / VK / RuTube / Дзен.";
         return;
       }
       const clipLabel = `clip_${String(index).padStart(2, "0")}`;
@@ -1245,6 +1251,7 @@
               if (okList.includes("rutube")) { clip.rutube_published = true; clip.publish_rutube_ok = true; }
               if (okList.includes("tiktok")) { clip.tiktok_published = true; clip.publish_tiktok_ok = true; }
               if (okList.includes("instagram")) { clip.instagram_published = true; clip.publish_instagram_ok = true; }
+              if (okList.includes("youtube")) { clip.youtube_published = true; clip.publish_youtube_ok = true; }
             }
             try { render(latestData); } catch (_) {}
           }
@@ -1304,6 +1311,7 @@
         rutube: { api: "/api/rutube-login", title: "Вход в RuTube", ok: "RuTube" },
         tiktok: { api: "/api/tiktok-login", title: "Вход в TikTok", ok: "TikTok" },
         instagram: { api: "/api/instagram-login", title: "Вход в Instagram", ok: "Instagram" },
+        youtube: { api: "/api/youtube-login", title: "Вход в YouTube", ok: "YouTube" },
       }[platform];
       if (!meta) return;
       if (statusEl) statusEl.textContent = `Открываю браузер: ${meta.title}…`;

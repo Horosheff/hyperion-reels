@@ -1,6 +1,6 @@
 # Публикация Гиперион
 
-Красивый контур после нарезки: SEO-тексты → выбор клипов → обложки → очередь → **параллельная** публикация в Дзен / VK / RuTube / TikTok / Instagram (Playwright).
+Красивый контур после нарезки: SEO-тексты → выбор клипов → обложки → очередь → **параллельная** публикация в YouTube / Instagram / TikTok / VK / RuTube / Дзен (Playwright).
 
 ## Схема
 
@@ -9,11 +9,12 @@ flowchart TD
   A[Клипы готовы + Guardian PASS] --> B[metadata-writer]
   B --> C[Results UI: смотрим ролики]
   C --> D[Галочки: какие публиковать]
-  D --> E[Платформы: Дзен / VK / RuTube / TikTok / Instagram]
+  D --> E[Платформы: YouTube / IG / TikTok / VK / RuTube / Дзен]
   E --> F[prepare_covers Kie]
   F --> G[prepare_publish_queue]
   G --> H[READY_TO_PUBLISH]
   H --> I["Опубликовать по галочкам — параллельно"]
+  I --> J0[youtube_client]
   I --> J1[dzen_client]
   I --> J2[vk_client]
   I --> J3[rutube_client]
@@ -40,9 +41,9 @@ flowchart TD
 1. Смотрите клип
 2. SEO-вкладки (в т.ч. VK / Дзен)
 3. Галочка **«Публиковать этот клип»**
-4. Платформы (**Дзен / VK / RuTube / TikTok / Instagram**)
+4. Платформы (**YouTube / Instagram / TikTok / VK / RuTube / Дзен** — по умолчанию все включены)
 5. **«Подготовить обложки»** — Kie только для выбранных
-6. **«Опубликовать (по галочкам)»** — все отмеченные платформы стартуют **одновременно** (`/api/publish-platforms`, `ThreadPoolExecutor`)
+6. **«Опубликовать (по галочкам)»** — все отмеченные платформы стартуют **одновременно** (`/api/publish-platforms`, `ThreadPoolExecutor`, слоты мониторов)
 
 Playwright-окна открываются на **мониторе №1 (правый)** — см. `docs/PLAYWRIGHT-DISPLAY.md` (`PLAYWRIGHT_MONITOR=1`).
 
@@ -58,9 +59,10 @@ Brand kit: `videoshorts-memory/brand/covers/brand-urls.json` (HTTPS avatar + ref
 
 `scripts/prepare_publish_queue.py` → `publish-queue.json`
 
+- `youtube` → `adapter: playwright:youtube` (`publish_youtube.py`) — Studio: Создать → файл → обложка → категория → Public
 - `zen` → `adapter: playwright:dzen`
 - `vk` → `adapter: playwright:vk` (`publish_vk.py`)
-- `rutube` → `adapter: playwright:rutube` (`publish_rutube.py`) — обложка: таб **Shorts** обязателен
+- `rutube` → `adapter: playwright:rutube` (`publish_rutube.py`) — обложка: таб **Shorts** обязателен; ждать **Загрузка + Обработка ≥100%** (не Escape на форме — иначе диалог «Сохранить часть изменений»)
 - `tiktok` → `adapter: playwright:tiktok` (`publish_tiktok.py`) — диалог «Продолжить публикацию?» → второе **Опубликовать**
 - `instagram` → `adapter: playwright:instagram` (`publish_instagram.py`) — Reels, без Windows file dialog (`set_input_files`)
 
@@ -101,6 +103,9 @@ python publish_tiktok.py ..\videoshorts-memory\output\clips\<stem> --index 1
 python publish_instagram.py ..\videoshorts-memory\output\clips\<stem> --index 1
 python publish_instagram.py --login-only
 python publish_instagram.py --status
+python publish_youtube.py ..\videoshorts-memory\output\clips\<stem> --index 1
+python publish_youtube.py --login-only
+python publish_youtube.py --status
 ```
 
 Ограничения Дзен: вертикаль 9:16, до ~2 мин, MP4/WEBM, **максимум 5 тегов**.
@@ -124,16 +129,37 @@ python publish_instagram.py --status
 Лог: `output/clips/<stem>/instagram-publish-log.json`  
 Скриншоты: `videoshorts-memory/output/instagram-screenshots/`
 
+### YouTube Shorts (внутри плагина)
+
+| Файл | Назначение |
+|------|------------|
+| `scripts/youtube_client.py` | Playwright Studio: Create → файл → title/desc → recommended hashtags → playlist → tags (Shift+Enter) → Public |
+| `scripts/publish_youtube.py` | Обёртка для Results UI / CLI / `/api/publish-platforms` |
+| `scripts/youtube_login_save.py` | Ручной вход Google → cookies |
+| `scripts/recordings/youtube_publish_codegen.py` | Эталон codegen |
+| `videoshorts-memory/secrets/youtube_storage_state.json` | Cookies (**gitignored**) |
+
+Важно:
+- хештеги в title — клики по **«Рекомендуемые хештеги»** (не ручной `#…`);
+- поле **Теги** — `type` + **Shift+Enter** (отдельно от хештегов);
+- **не** ставить галочку paid promotion / прямой рекламы на шаге проверок;
+- Escape на форме загрузки закрывает модалку → черновик (не использовать);
+- кастомный значок Shorts на части каналов только в приложении YouTube; post-publish edit пробуется автоматически.
+
+Лог: `output/clips/<stem>/youtube-publish-log.json`  
+Скриншоты: `videoshorts-memory/output/youtube-screenshots/`
+
 ## 6. Adapters
 
 | Adapter | Статус |
 |---------|--------|
+| `playwright:youtube` | готов (Studio Shorts) |
 | `playwright:dzen` | готов |
 | `playwright:vk` | готов |
 | `playwright:rutube` | готов (Shorts cover) |
 | `playwright:tiktok` | готов (confirm dialog) |
 | `playwright:instagram` | готов (Reels, no native file dialog) |
-| YouTube / TG API | позже |
+| Telegram API | позже |
 
 ## Агенты
 
@@ -147,7 +173,7 @@ python publish_instagram.py --status
 
 - [ ] Клипы прошли QA
 - [ ] Метаданные есть
-- [ ] Выбраны клипы + платформы (Дзен / VK / RuTube / TikTok / Instagram)
+- [ ] Выбраны клипы + платформы (YouTube / Instagram / TikTok / VK / RuTube / Дзен)
 - [ ] Обложки готовы
 - [ ] Cookies платформ (или «Войти…»)
 - [ ] «Опубликовать (по галочкам)» — параллельный старт

@@ -72,8 +72,19 @@ class MonitorInfo:
     device: str
 
 
+_MON_CACHE: list[MonitorInfo] | None = None
+_MON_CACHE_AT = 0.0
+
+
 def list_monitors() -> list[MonitorInfo]:
-    """Windows screens via PowerShell WinForms."""
+    """Windows screens via PowerShell WinForms (cached — safe for parallel Chromium launches)."""
+    global _MON_CACHE, _MON_CACHE_AT
+    import time as _t
+
+    now = _t.time()
+    if _MON_CACHE is not None and (now - _MON_CACHE_AT) < 60:
+        return list(_MON_CACHE)
+
     if sys.platform != "win32":
         return []
     ps = r"""
@@ -102,7 +113,7 @@ $arr | ConvertTo-Json -Compress
         data = json.loads(raw)
         if isinstance(data, dict):
             data = [data]
-        return [
+        mons = [
             MonitorInfo(
                 index=int(d["index"]),
                 primary=bool(d["primary"]),
@@ -114,9 +125,12 @@ $arr | ConvertTo-Json -Compress
             )
             for d in data
         ]
+        _MON_CACHE = mons
+        _MON_CACHE_AT = now
+        return list(mons)
     except Exception as exc:
         logger.warning("list_monitors failed: %s", exc)
-        return []
+        return list(_MON_CACHE or [])
 
 
 def _alias_monitor(mons: list[MonitorInfo], alias: str) -> MonitorInfo | None:
@@ -176,7 +190,11 @@ def resolve_monitor(choice: str | None = None) -> MonitorInfo | None:
 
 
 def chromium_window_args(*, maximize: bool = True) -> list[str]:
-    """Args to place Chromium on the chosen monitor."""
+    """Args to place Chromium on the chosen monitor.
+
+    VIDEOSHORTS_WINDOW_SLOT / VIDEOSHORTS_BROWSER_SLOT — сдвиг окна при
+    параллельной публикации (Instagram не оказывается под Дзен/VK).
+    """
     _ensure_env_loaded()
     pos = (os.getenv("PLAYWRIGHT_WINDOW_POSITION") or "").strip()
     size = (os.getenv("PLAYWRIGHT_WINDOW_SIZE") or "").strip()
@@ -191,6 +209,20 @@ def chromium_window_args(*, maximize: bool = True) -> list[str]:
         if not size:
             # slight shrink helps Chromium keep the window on that monitor
             size = f"{max(800, mon.width - 16)},{max(600, mon.height - 16)}"
+
+    slot_raw = (
+        os.getenv("VIDEOSHORTS_WINDOW_SLOT")
+        or os.getenv("VIDEOSHORTS_BROWSER_SLOT")
+        or "0"
+    ).strip()
+    try:
+        slot = max(0, int(slot_raw))
+    except ValueError:
+        slot = 0
+    if slot:
+        # cascade ~56px so parallel headed browsers stay visible
+        x += 56 * slot
+        y += 40 * slot
 
     args = [f"--window-position={x},{y}"]
     if size and re.fullmatch(r"\d+\s*,\s*\d+", size):

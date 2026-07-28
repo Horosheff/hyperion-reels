@@ -606,7 +606,7 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
 
-        if path in {"/api/vk-status", "/api/rutube-status", "/api/tiktok-status", "/api/instagram-status"}:
+        if path in {"/api/vk-status", "/api/rutube-status", "/api/tiktok-status", "/api/instagram-status", "/api/youtube-status"}:
             query = parse_qs(parsed.query)
             raw_path = query.get("clips_dir", [""])[0]
             clips_dir = None
@@ -631,6 +631,9 @@ class Handler(BaseHTTPRequestHandler):
                     json_response(self, _status(clips_dir))
                 elif path == "/api/instagram-status":
                     from publish_instagram import status_payload as _status
+                    json_response(self, _status(clips_dir))
+                elif path == "/api/youtube-status":
+                    from publish_youtube import status_payload as _status
                     json_response(self, _status(clips_dir))
                 else:
                     from publish_tiktok import resolve_config as _tt_cfg
@@ -811,7 +814,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
-        if path in {"/api/vk-login", "/api/rutube-login", "/api/tiktok-login", "/api/instagram-login"}:
+        if path in {"/api/vk-login", "/api/rutube-login", "/api/tiktok-login", "/api/instagram-login", "/api/youtube-login"}:
             try:
                 length = int(self.headers.get("Content-Length", "0") or "0")
                 raw = self.rfile.read(length) if length else b"{}"
@@ -830,12 +833,14 @@ class Handler(BaseHTTPRequestHandler):
                     "/api/rutube-login": "publish_rutube.py",
                     "/api/tiktok-login": "publish_tiktok.py",
                     "/api/instagram-login": "publish_instagram.py",
+                    "/api/youtube-login": "publish_youtube.py",
                 }
                 label_map = {
                     "/api/vk-login": "vk",
                     "/api/rutube-login": "rutube",
                     "/api/tiktok-login": "tiktok",
                     "/api/instagram-login": "instagram",
+                    "/api/youtube-login": "youtube",
                 }
                 script = script_map[path]
                 label = label_map[path]
@@ -862,6 +867,9 @@ class Handler(BaseHTTPRequestHandler):
                         status = status_payload(resolved)
                     elif path == "/api/instagram-login":
                         from publish_instagram import status_payload
+                        status = status_payload(resolved)
+                    elif path == "/api/youtube-login":
+                        from publish_youtube import status_payload
                         status = status_payload(resolved)
                     else:
                         from publish_tiktok import resolve_config as _tt_cfg
@@ -957,6 +965,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/publish-rutube",
             "/api/publish-tiktok",
             "/api/publish-instagram",
+            "/api/publish-youtube",
             "/api/publish-platforms",
         }:
             try:
@@ -988,6 +997,7 @@ class Handler(BaseHTTPRequestHandler):
                     "rutube": "publish_rutube.py",
                     "tiktok": "publish_tiktok.py",
                     "instagram": "publish_instagram.py",
+                    "youtube": "publish_youtube.py",
                 }
                 log_by_platform = {
                     "zen": "dzen-publish-log.json",
@@ -996,6 +1006,7 @@ class Handler(BaseHTTPRequestHandler):
                     "rutube": "rutube-publish-log.json",
                     "tiktok": "tiktok-publish-log.json",
                     "instagram": "instagram-publish-log.json",
+                    "youtube": "youtube-publish-log.json",
                 }
 
                 if path == "/api/publish-platforms":
@@ -1010,14 +1021,27 @@ class Handler(BaseHTTPRequestHandler):
                         if key in script_by_platform and key not in platforms:
                             platforms.append(key)
                     platforms = [
-                        p for p in platforms if p in {"zen", "vk", "rutube", "tiktok", "instagram"}
+                        p
+                        for p in platforms
+                        if p in {"zen", "vk", "rutube", "tiktok", "instagram", "youtube"}
                     ]
+                    # YouTube/Instagram раньше: тяжёлый UI + лишний subprocess
+                    _pref = {
+                        "youtube": 0,
+                        "instagram": 1,
+                        "tiktok": 2,
+                        "vk": 3,
+                        "rutube": 4,
+                        "zen": 5,
+                    }
+                    platforms.sort(key=lambda p: _pref.get(p, 50))
                 else:
                     platforms = [{
                         "/api/publish-vk": "vk",
                         "/api/publish-rutube": "rutube",
                         "/api/publish-tiktok": "tiktok",
                         "/api/publish-instagram": "instagram",
+                        "/api/publish-youtube": "youtube",
                     }[path]]
 
                 if not platforms:
@@ -1025,7 +1049,7 @@ class Handler(BaseHTTPRequestHandler):
                         self,
                         {
                             "ok": False,
-                            "error": "Нет отмеченных платформ (Дзен / VK / RuTube / TikTok / Instagram)",
+                            "error": "Нет отмеченных платформ (Дзен / VK / RuTube / TikTok / Instagram / YouTube)",
                         },
                         status=400,
                     )
@@ -1033,7 +1057,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-                def _run_one(platform: str) -> dict:
+                def _run_one(platform: str, slot: int) -> dict:
                     script = SCRIPTS_DIR / script_by_platform[platform]
                     if not script.is_file():
                         return {
@@ -1041,6 +1065,10 @@ class Handler(BaseHTTPRequestHandler):
                             "ok": False,
                             "error": f"script missing: {script.name}",
                         }
+                    # Лёгкий stagger, чтобы 5× Playwright не убили друг друга на старте
+                    if slot > 0:
+                        time.sleep(0.35 * slot)
+                    print(f"[publish-platforms] START {platform} slot={slot}", flush=True)
                     cmd = [
                         sys.executable,
                         str(script),
@@ -1050,13 +1078,23 @@ class Handler(BaseHTTPRequestHandler):
                     ]
                     if draft and platform in {"zen", "tiktok"}:
                         cmd.append("--draft")
+                    child_env = os.environ.copy()
+                    child_env["VIDEOSHORTS_PLATFORM"] = platform
+                    child_env["VIDEOSHORTS_BROWSER_SLOT"] = str(slot)
+                    # Каждый браузер чуть сдвинут — Instagram не прячется под Дзен/VK
+                    child_env["VIDEOSHORTS_WINDOW_SLOT"] = str(slot)
                     proc = subprocess.run(
                         cmd,
                         cwd=str(SCRIPTS_DIR),
+                        env=child_env,
                         capture_output=True,
                         text=True,
                         encoding="utf-8",
                         errors="replace",
+                    )
+                    print(
+                        f"[publish-platforms] DONE {platform} code={proc.returncode}",
+                        flush=True,
                     )
                     log_path = resolved / log_by_platform[platform]
                     log_data = {}
@@ -1078,9 +1116,11 @@ class Handler(BaseHTTPRequestHandler):
 
                 # Параллельно: все отмеченные платформы открывают браузеры одновременно
                 results_by_platform: dict[str, dict] = {}
-                workers = max(1, min(len(platforms), 5))
+                workers = max(1, min(len(platforms), 6))
                 with ThreadPoolExecutor(max_workers=workers) as pool:
-                    futures = {pool.submit(_run_one, p): p for p in platforms}
+                    futures = {
+                        pool.submit(_run_one, p, i): p for i, p in enumerate(platforms)
+                    }
                     for fut in as_completed(futures):
                         platform = futures[fut]
                         try:
@@ -1174,6 +1214,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            if content_type.startswith("text/html"):
+                self.send_header("Cache-Control", "no-store, max-age=0")
             self.end_headers()
             started = True
             self.wfile.write(body)

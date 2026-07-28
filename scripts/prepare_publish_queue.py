@@ -108,6 +108,8 @@ def main() -> None:
                 adapter = "playwright:tiktok"
             elif platform == "instagram":
                 adapter = "playwright:instagram"
+            elif platform == "youtube":
+                adapter = "playwright:youtube"
             else:
                 adapter = f"future:{platform}"
             platform_jobs[platform] = {
@@ -139,8 +141,8 @@ def main() -> None:
         "ready_count": len(items),
         "blockers": blockers,
         "items": items,
-        "platforms_supported_now": ["zen", "vk", "rutube", "tiktok", "instagram"],
-        "platforms_planned": ["youtube", "telegram"],
+        "platforms_supported_now": ["youtube", "zen", "vk", "rutube", "tiktok", "instagram"],
+        "platforms_planned": ["telegram"],
         "next_step": (
             "publish_platforms_ui"
             if status == "READY_TO_PUBLISH"
@@ -148,7 +150,7 @@ def main() -> None:
         ),
         "note": (
             "Пакет готов. Results → галочки платформ → «Опубликовать (по галочкам)». "
-            "Playwright: Дзен / VK / RuTube / TikTok / Instagram. YouTube/TG — позже."
+            "Playwright: YouTube / Дзен / VK / RuTube / TikTok / Instagram. TG — позже."
         ),
     }
     out = clips_dir / "publish-queue.json"

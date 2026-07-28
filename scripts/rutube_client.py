@@ -8,7 +8,8 @@
   4) Категория: «Технологии и интернет» (env RUTUBE_CATEGORY)
   5) Обложка: иконка upload → label «Shorts» → файл → Готово
   6) Плейлист: выбрать «Вайбкодинг для бизнеса» (НЕ создавать новый)
-  7) Опубликовать
+  7) Дождаться Загрузка 100% + Обработка 100% (не закрывать модалку Escape!)
+  8) Опубликовать → дождаться снятия «Не закрывайте страницу»
 """
 from __future__ import annotations
 
@@ -128,9 +129,42 @@ class RutubeClient:
         self.context = await self.browser.new_context(**ctx_kwargs)
         self.page = await self.context.new_page()
         self.page.set_default_timeout(self.timeout)
+        # Chromium/RuTube: «Сохранить часть изменений?» / beforeunload при раннем закрытии
+        self.page.on("dialog", self._on_js_dialog)
         logger.info("RuTube browser started · channel=%s · humanize=%s", self.channel_id, self.hz.enabled)
 
+    async def _on_js_dialog(self, dialog) -> None:
+        """Не бросать вкладку на mid-upload: Stay/Cancel на leave-site и «часть изменений»."""
+        try:
+            msg = (dialog.message or "").strip()
+            dtype = dialog.type
+            low = msg.lower()
+            logger.warning("JS dialog (%s): %s", dtype, msg[:200])
+            if dtype == "beforeunload" or any(
+                s in low
+                for s in (
+                    "часть изменений",
+                    "не сохранятся",
+                    "не сохран",
+                    "leave",
+                    "unsaved",
+                    "покинуть",
+                    "закрыть сайт",
+                )
+            ):
+                await dialog.dismiss()
+                return
+            await dialog.accept()
+        except Exception as exc:
+            logger.debug("dialog handler: %s", exc)
+
     async def close(self) -> None:
+        try:
+            if self.page and not self.page.is_closed():
+                # Не закрывать, пока висит «Загрузка N%» / «Не закрывайте страницу»
+                await self._wait_safe_to_leave(timeout_sec=90)
+        except Exception as exc:
+            logger.debug("safe leave wait: %s", exc)
         try:
             if self.context:
                 await self.save_cookies()
@@ -243,12 +277,13 @@ class RutubeClient:
     async def _select_category(self) -> bool:
         assert self.page
         try:
-            # Закрыть всплывашку со ссылкой (кнопка copy перехватывает клики)
-            try:
-                await self.page.keyboard.press("Escape")
-                await self.page.wait_for_timeout(300)
-            except Exception:
-                pass
+            # НЕ Escape — закрывает всю модалку upload → виджет «Загрузка видео»
+            # и диалог «Сохранить часть изменений» при уходе.
+            await self._dismiss_overlays()
+            if not await self._upload_form_open():
+                logger.error("Форма upload закрыта перед выбором категории")
+                await self.screenshot("error_category_form_closed")
+                return False
 
             # Поле категории — чаще combobox / текст текущего значения
             for opener in (
@@ -276,17 +311,72 @@ class RutubeClient:
             await self.screenshot("error_category")
             return False
 
-    async def _processing_percent(self) -> int | None:
-        """Парсит «Обработка N%» из страницы. None если процента нет."""
+    async def _upload_form_open(self) -> bool:
+        """Модалка редактирования ролика ещё открыта (не схлопнулась в виджет)."""
         assert self.page
+        title = self.page.get_by_role("textbox", name="Название")
+        if await title.count() == 0:
+            return False
+        try:
+            return bool(await title.first.is_visible())
+        except Exception:
+            return False
+
+    async def _page_transfer_status(self) -> dict:
+        """Статус загрузки/обработки со страницы Studio.
+
+        Важно: «Загрузка N%» ≠ «Обработка N%». Раньше парсили только Обработку,
+        а pct=None считали ready → ранний Publish / закрытие вкладки.
+        """
+        assert self.page
+        out: dict = {
+            "body": "",
+            "upload_pct": None,
+            "process_pct": None,
+            "dont_close": False,
+            "preview_pending": False,
+            "link_pending": False,
+            "busy": False,
+        }
         try:
             body = await self.page.locator("body").inner_text(timeout=3000)
         except Exception:
-            return None
-        m = re.search(r"Обработка\s+(\d+)\s*%", body, flags=re.I)
-        if not m:
-            return None
-        return int(m.group(1))
+            return out
+        out["body"] = body
+        low = body.lower()
+        m_up = re.search(r"Загрузка\s+(\d+)\s*%", body, flags=re.I)
+        m_pr = re.search(r"Обработка\s+(\d+)\s*%", body, flags=re.I)
+        if m_up:
+            out["upload_pct"] = int(m_up.group(1))
+        if m_pr:
+            out["process_pct"] = int(m_pr.group(1))
+        out["dont_close"] = "не закрывайте страницу" in low
+        out["preview_pending"] = "видео появится после обработки" in low
+        out["link_pending"] = "появится после загрузки" in low
+        # Виджет «Загрузка видео» на главной без полной формы — тоже busy
+        widget_busy = bool(
+            re.search(r"Загрузка видео", body, flags=re.I) and not await self._upload_form_open()
+        )
+        up = out["upload_pct"]
+        pr = out["process_pct"]
+        out["busy"] = bool(
+            out["dont_close"]
+            or out["preview_pending"]
+            or out["link_pending"]
+            or widget_busy
+            or (up is not None and up < 100)
+            or (pr is not None and pr < 100)
+        )
+        return out
+
+    async def _processing_percent(self) -> int | None:
+        """Совместимость: процент обработки, иначе загрузки."""
+        st = await self._page_transfer_status()
+        if st["process_pct"] is not None:
+            return int(st["process_pct"])
+        if st["upload_pct"] is not None:
+            return int(st["upload_pct"])
+        return None
 
     async def _dismiss_overlays(self) -> None:
         """Закрыть тултип со ссылкой/copy, не сбрасывая форму через Escape на модалке."""
@@ -335,44 +425,152 @@ class RutubeClient:
             pass
         return True
 
-    async def _wait_processing_ready(self, *, timeout_sec: int = 360) -> bool:
-        """Ждём обработку ≥100% И активную кнопку «Опубликовать». Без force-publish."""
+    async def _wait_processing_ready(self, *, timeout_sec: int = 900) -> bool:
+        """Ждём ПОЛНУЮ загрузку + обработку. Нельзя считать pct=None = ready.
+
+        Ready только если:
+          - форма upload ещё открыта
+          - нет «Не закрывайте страницу» / preview pending
+          - уже видели upload≥100 или process≥100 (не «процент просто пропал»)
+          - кнопка «Опубликовать» enabled
+          - 2 стабильных тика подряд
+        """
         assert self.page
         deadline = asyncio.get_event_loop().time() + timeout_sec
+        saw_upload_100 = False
+        saw_process_100 = False
+        saw_any_pct = False
+        stable_ready = 0
         while asyncio.get_event_loop().time() < deadline:
-            pct = await self._processing_percent()
+            if not await self._upload_form_open():
+                logger.error(
+                    "Модалка upload закрылась во время ожидания "
+                    "(Escape/клик снаружи) — виджет «Загрузка видео» не подходит для Publish"
+                )
+                await self.screenshot("error_upload_modal_closed")
+                return False
+
+            st = await self._page_transfer_status()
+            up = st["upload_pct"]
+            pr = st["process_pct"]
+            if up is not None:
+                saw_any_pct = True
+                if up >= 100:
+                    saw_upload_100 = True
+            if pr is not None:
+                saw_any_pct = True
+                if pr >= 100:
+                    saw_process_100 = True
+
             pub = self.page.get_by_role("button", name="Опубликовать")
             enabled = False
             try:
                 enabled = await pub.count() > 0 and await pub.first.is_enabled()
             except Exception:
                 pass
-            preview_ready = True
-            try:
-                body = (await self.page.locator("body").inner_text(timeout=2000)).lower()
-                if "видео появится после обработки" in body:
-                    preview_ready = False
-            except Exception:
-                pass
 
-            done_pct = pct is None or pct >= 100
-            if enabled and done_pct and preview_ready:
-                logger.info("Обработка ready (pct=%s enabled=%s)", pct, enabled)
-                return True
+            # Короткий ролик иногда показывает только «Обработка 100%»
+            reached_100 = saw_upload_100 or saw_process_100
+            still_transferring = (
+                st["dont_close"]
+                or st["preview_pending"]
+                or (up is not None and up < 100)
+                or (pr is not None and pr < 100)
+            )
+            # pct пропал после 100% — ок; pct пропал на 11% — НЕ ок
+            pct_ok = reached_100 and (
+                (up is None or up >= 100) and (pr is None or pr >= 100)
+            )
+
+            if enabled and pct_ok and not still_transferring and saw_any_pct:
+                stable_ready += 1
+                if stable_ready >= 2:
+                    logger.info(
+                        "Обработка ready (upload=%s process=%s saw100_up=%s saw100_pr=%s)",
+                        up,
+                        pr,
+                        saw_upload_100,
+                        saw_process_100,
+                    )
+                    return True
+            else:
+                stable_ready = 0
 
             left = int(deadline - asyncio.get_event_loop().time())
             if left % 15 < 3:
                 logger.info(
-                    "…ждём обработку RuTube (%ss) pct=%s enabled=%s preview=%s",
+                    "…ждём RuTube upload/process (%ss) upload=%s process=%s "
+                    "enabled=%s dont_close=%s preview=%s saw100=%s",
                     left,
-                    pct,
+                    up,
+                    pr,
                     enabled,
-                    preview_ready,
+                    st["dont_close"],
+                    st["preview_pending"],
+                    reached_100,
                 )
             await self.page.wait_for_timeout(2500)
-        logger.error("Таймаут обработки — НЕ публикую (чтобы не сбросить настройки)")
+        logger.error("Таймаут загрузки/обработки — НЕ публикую (чтобы не сбросить настройки)")
         await self.screenshot("error_processing_timeout")
         return False
+
+    async def _wait_safe_to_leave(self, *, timeout_sec: int = 90) -> None:
+        """Перед закрытием браузера — дождаться конца «Загрузка N%» / «Не закрывайте»."""
+        assert self.page
+        deadline = asyncio.get_event_loop().time() + timeout_sec
+        while asyncio.get_event_loop().time() < deadline:
+            st = await self._page_transfer_status()
+            if not st["dont_close"] and not (
+                st["upload_pct"] is not None and st["upload_pct"] < 100
+            ):
+                # виджет «Загрузка видео» без % — подождать ещё чуть-чуть если только что публиковали
+                if "загрузка" in st["body"].lower() and "%" in st["body"]:
+                    await self.page.wait_for_timeout(2000)
+                    continue
+                return
+            await self.page.wait_for_timeout(2000)
+        logger.warning("safe-to-leave: таймаут, закрываю всё равно")
+
+    async def _wait_after_publish(self, *, timeout_sec: int = 120) -> bool:
+        """После клика «Опубликовать» — дождаться ухода с формы / снятия «Не закрывайте»."""
+        assert self.page
+        deadline = asyncio.get_event_loop().time() + timeout_sec
+        while asyncio.get_event_loop().time() < deadline:
+            st = await self._page_transfer_status()
+            form_open = await self._upload_form_open()
+            low = st["body"].lower()
+            success = any(
+                s in low
+                for s in (
+                    "опубликовано",
+                    "видео опубликовано",
+                    "успешно",
+                    "на модерации",
+                )
+            )
+            if success and not st["dont_close"]:
+                logger.info("Publish confirmed by success text")
+                return True
+            # Форма закрылась и нет «не закрывайте» — обычно ок
+            if not form_open and not st["dont_close"]:
+                if st["upload_pct"] is None or st["upload_pct"] >= 100:
+                    logger.info("Publish: форма закрыта, загрузка не активна")
+                    return True
+            left = int(deadline - asyncio.get_event_loop().time())
+            if left % 15 < 3:
+                logger.info(
+                    "…после Publish (%ss) form=%s upload=%s dont_close=%s",
+                    left,
+                    form_open,
+                    st["upload_pct"],
+                    st["dont_close"],
+                )
+            await self.page.wait_for_timeout(2500)
+        logger.warning("После Publish не дождались явного success — проверяю скрин")
+        await self.screenshot("warn_after_publish_timeout")
+        # Не фейлим жёстко, если хотя бы нет «Не закрывайте»
+        st = await self._page_transfer_status()
+        return not st["dont_close"]
 
     async def _cover_shorts_locator(self):
         """Таб/label Shorts в модалке кадрирования обложки."""
@@ -653,10 +851,18 @@ class RutubeClient:
 
         await self._dismiss_overlays()
         await self._hpause(0.4, 0.9)
+        if not await self._upload_form_open():
+            logger.error("Форма upload закрылась до категории — стоп")
+            await self.screenshot("error_form_closed_before_category")
+            return False
         await self._select_category()
 
         if cover_path:
             await self._hpause(0.5, 1.0)
+            if not await self._upload_form_open():
+                logger.error("Форма upload закрылась до обложки — стоп")
+                await self.screenshot("error_form_closed_before_cover")
+                return False
             cover_ok = await self._attach_cover(cover_path)
             if not cover_ok:
                 logger.error("Обложка Shorts не установлена — публикацию останавливаю")
@@ -671,13 +877,17 @@ class RutubeClient:
                 pass
 
         await self._hpause(0.4, 0.9)
+        if not await self._upload_form_open():
+            logger.error("Форма upload закрылась до плейлиста — стоп")
+            await self.screenshot("error_form_closed_before_playlist")
+            return False
         playlist_ok = await self._select_playlist()
         if not playlist_ok:
             logger.warning("Публикую без плейлиста (создание новых отключено)")
 
         await self._dismiss_overlays()
 
-        # Ждём ПОЛНУЮ обработку — ранний Publish сбрасывает все настройки
+        # Ждём ПОЛНУЮ загрузку+обработку — ранний Publish / закрытие → «Сохранить часть изменений»
         ready = await self._wait_processing_ready()
         if not ready:
             return False
@@ -730,11 +940,14 @@ class RutubeClient:
                 return False
 
             await self._hclick(pub.first)
-            logger.info("clicked publish (after full processing + settings check)")
+            logger.info("clicked publish (after full upload+processing + settings check)")
 
-        await self.page.wait_for_timeout(12000)
+        ok_after = await self._wait_after_publish()
         await self.screenshot("step5_after_publish")
         await self.save_cookies()
+        if not ok_after:
+            logger.error("После Publish страница всё ещё в состоянии загрузки")
+            return False
         logger.info("RuTube: %s", "draft" if draft else "published")
         return True
 

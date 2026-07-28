@@ -251,10 +251,11 @@ def patch_results() -> None:
                 <label><input type="checkbox" value="zen" checked> Дзен</label>
               </div>'''
     new_platforms = '''              <div class="platforms" data-platforms-for="${esc(idx)}">
-                <label><input type="checkbox" value="zen" checked> Дзен</label>
+                <label><input type="checkbox" value="instagram" checked> Instagram</label>
+                <label><input type="checkbox" value="tiktok" checked> TikTok</label>
                 <label><input type="checkbox" value="vk" checked> VK</label>
                 <label><input type="checkbox" value="rutube" checked> RuTube</label>
-                <label><input type="checkbox" value="tiktok" checked> TikTok</label>
+                <label><input type="checkbox" value="zen" checked> Дзен</label>
               </div>'''
     if old_platforms in text:
         text = text.replace(old_platforms, new_platforms)

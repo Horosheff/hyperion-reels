@@ -119,8 +119,10 @@ class InstagramClient:
             headless=self.headless,
             args=launch_args,
         )
+        # viewport=None + maximized — как VK/TikTok; фиксированный viewport прятал окно
+        # под соседними Chromium при параллельном publish-platforms.
         ctx_kwargs: dict = {
-            "viewport": {"width": 1440, "height": 1000},
+            "viewport": None,
             "locale": self.locale,
             "timezone_id": self.timezone_id,
         }
@@ -134,6 +136,10 @@ class InstagramClient:
         self.context = await self.browser.new_context(**ctx_kwargs)
         self.page = await self.context.new_page()
         self.page.set_default_timeout(self.timeout)
+        logger.info(
+            "Instagram browser started · slot=%s · humanize platform parallel OK",
+            os.getenv("VIDEOSHORTS_WINDOW_SLOT") or os.getenv("VIDEOSHORTS_BROWSER_SLOT") or "0",
+        )
 
     async def close(self) -> None:
         try:
