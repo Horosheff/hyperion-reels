@@ -506,6 +506,34 @@ def validate_post_render_review(path: Path) -> tuple[bool, list[str]]:
     return not errors, errors
 
 
+# Hard API limits (documented caps; overlong fields are rejected at publish time).
+PLATFORM_LIMITS: dict[str, dict[str, int]] = {
+    "youtube": {"title": 100, "description": 5000, "tags_total": 500},
+    "instagram": {"caption": 2200},
+    "tiktok": {"caption": 2200},
+    "telegram": {"caption": 1024},
+    "vk": {"title": 100},
+    "rutube": {"title": 100},
+}
+
+
+def _check_platform_limits(label: str, name: str, pack: dict, errors: list[str]) -> None:
+    limits = PLATFORM_LIMITS.get(name)
+    if not limits:
+        return
+    for field, max_len in limits.items():
+        if field == "tags_total":
+            tags = pack.get("tags") or pack.get("hashtags")
+            if isinstance(tags, list):
+                total = sum(len(str(t)) for t in tags) + max(0, len(tags) - 1)
+                if total > max_len:
+                    errors.append(f"{label}: tags total {total} chars > {max_len} (API limit)")
+            continue
+        value = pack.get(field)
+        if isinstance(value, str) and len(value) > max_len:
+            errors.append(f"{label}.{field}: {len(value)} chars > {max_len} (API limit)")
+
+
 def validate_metadata(path: Path) -> tuple[bool, list[str]]:
     """path = metadata-manifest.json or clips_dir."""
     manifest_path = path
@@ -544,6 +572,9 @@ def validate_metadata(path: Path) -> tuple[bool, list[str]]:
                 errors.append(f"clips[{i}].platforms.youtube: description required")
             if name == "instagram" and not (pack.get("caption") or pack.get("description")):
                 errors.append(f"clips[{i}].platforms.instagram: caption required")
+        for name, pack in platforms.items():
+            if isinstance(pack, dict):
+                _check_platform_limits(f"clips[{i}].platforms.{name}", name, pack, errors)
         if not clip.get("cover_prompt"):
             errors.append(f"clips[{i}]: cover_prompt required")
         # per-file exists if clips_dir known

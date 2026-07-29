@@ -23,6 +23,18 @@ description: SEO titles/descriptions per platform — агент пишет JSON
 2. Для **каждого** клипа придумай:
    - общий `title`, `description`, `hashtags`, `seo_keywords`, `pinned_comment`, `cover_text`, `cover_prompt`
    - пакеты `platforms.youtube|instagram|tiktok|telegram` (отдельные формулировки под сеть)
+
+### Жёсткие лимиты API (не превышать — валидатор отклонит)
+
+| Платформа | Поле | Макс. символов |
+|-----------|------|----------------|
+| youtube | title | 100 |
+| youtube | description | 5000 |
+| youtube | tags (суммарно) | 500 |
+| instagram | caption | 2200 |
+| tiktok | caption | 2200 |
+| telegram | caption | 1024 |
+
 3. Запиши **Write**:
    - `output/clips/<stem>/metadata/clip_XX.metadata.json`
    - `output/clips/<stem>/metadata/clip_XX.metadata.md` (для человека; **обязателен**)

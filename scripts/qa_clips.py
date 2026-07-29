@@ -11,6 +11,7 @@ from pathlib import Path
 
 from videoshorts_core import configure_stdio, write_latest_results
 from agent_gate import agent_mode_enabled, evaluate_agent_decisions, evaluate_uniform_durations, gate_message
+import json_store
 
 configure_stdio()
 
@@ -19,22 +20,23 @@ def append_open_incident(clips_dir: Path, issues: list[str]) -> Path:
     root = Path(__file__).resolve().parents[1]
     queue = root / "videoshorts-memory" / "pipeline-fix-queue.md"
     queue.parent.mkdir(parents=True, exist_ok=True)
-    existing = queue.read_text(encoding="utf-8") if queue.is_file() else "# VideoShorts pipeline fix queue\n"
     incident_id = f"INC-{datetime.now().strftime('%Y%m%d-%H%M')}-guardian-qa-fail"
-    if incident_id in existing:
-        return queue
-    block = [
-        "",
-        f"## {incident_id}",
-        "- status: open",
-        "- step: guardian",
-        f"- clips_dir: {clips_dir}",
-        f"- summary: QA failed for {len(issues)} issue(s)",
-        "- issues:",
-        *[f"  - {issue}" for issue in issues[:20]],
-        "",
-    ]
-    queue.write_text(existing.rstrip() + "\n" + "\n".join(block), encoding="utf-8")
+    with json_store.file_lock(queue):
+        existing = queue.read_text(encoding="utf-8") if queue.is_file() else "# VideoShorts pipeline fix queue\n"
+        if incident_id in existing:
+            return queue
+        block = [
+            "",
+            f"## {incident_id}",
+            "- status: open",
+            "- step: guardian",
+            f"- clips_dir: {clips_dir}",
+            f"- summary: QA failed for {len(issues)} issue(s)",
+            "- issues:",
+            *[f"  - {issue}" for issue in issues[:20]],
+            "",
+        ]
+        json_store.write_text_atomic(queue, existing.rstrip() + "\n" + "\n".join(block))
     return queue
 
 

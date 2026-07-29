@@ -43,13 +43,24 @@ def run_step(
     if state_path and stage:
         update_stage(state_path, stage, "RUNNING", artifact=str(artifact.resolve()) if artifact else None)
 
-    r = subprocess.run(cmd, cwd=str(_SCRIPTS), env=env)
+    try:
+        step_timeout = max(0, int(os.getenv("VIDEOSHORTS_PIPELINE_STEP_TIMEOUT", "10800")))
+    except ValueError:
+        step_timeout = 10800
+
+    try:
+        r = subprocess.run(cmd, cwd=str(_SCRIPTS), env=env, timeout=step_timeout or None)
+    except subprocess.TimeoutExpired:
+        if state_path and stage:
+            update_stage(state_path, stage, "FAIL", message=f"timeout={step_timeout}s (env VIDEOSHORTS_PIPELINE_STEP_TIMEOUT)")
+        print(f"[ERROR] step timeout {step_timeout}s: {' '.join(cmd[:3])}", file=sys.stderr)
+        sys.exit(124)
 
     if r.returncode != 0:
         if state_path and stage:
             update_stage(state_path, stage, "FAIL", artifact=str(artifact.resolve()) if artifact else None, message=f"exit_code={r.returncode}")
         if on_fail:
-            subprocess.run(on_fail, cwd=str(_SCRIPTS), env=env)
+            subprocess.run(on_fail, cwd=str(_SCRIPTS), env=env, timeout=600)
 
         sys.exit(r.returncode)
     if state_path and stage:
