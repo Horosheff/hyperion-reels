@@ -5,7 +5,8 @@ description: Границы мысли + монтажное ТЗ — пишет 
 
 # VideoShorts Boundary Refiner (+ montage)
 
-Прочитай `shared/agent-decision-contract.md`.
+Прочитай `shared/agent-decision-contract.md` и
+`shared/editorial-selection-contract.md`.
 
 ## Роль
 
@@ -41,10 +42,22 @@ Guardian QA меряет **финальный** MP4 после jump-cut/silence 
 1. Уточни start/end по segment/word/silence/filler; **не** режь punch-pause ~1.2s после hook.
 2. В `clips[]` только `finished_thought_gate=pass` **и** post-cleanup gate pass. Обрывки / слишком короткий clean → `rejected_clips[]`.
 3. Уважай editor REJECT (и согласованный virality/scores REJECT). При конфликте — чини границу word-evidence или reject.
-4. Для каждого keep-клипа собери montage: `jump_cuts`, `silence_remove`, `filler_remove`/`glue_notes`, `zoom_punch`, `do_not_cut_before`, `do_not_cut_after`, `estimated_duration_after_cleanup`, статус `READY_FOR_CUTTER` только если clean ≥ min_sec−2. Leading silence после hook не в auto-cut. Уважай brief `zoomPunch`.
-5. **Write** `moments/refined-moments.json` (`decision_source: agent`, `authored_by: videoshorts-boundary-refiner`).
-6. **Write** финальный `moments/clip-decisions.json` со всеми REQUIRED decision fields, `selected_by_agent: true` только с evidence.
-7. **Write** `moments/montage-plan.json` (`authored_by: videoshorts-boundary-refiner`).
+4. Для каждого keep-клипа прочитай `cleanup_risks` и `do_not_cut` от moment-finder
+   вместе с `cleanup-plan.json`. Каждый item с `action: remove` должен:
+   - попасть в `silence_remove.items` или `filler_remove.items` с `safe: true`; либо
+   - для repeat/false-start попасть в `jump_cuts` с `agent_reason` и
+     непустым `glue_notes`; либо
+   - получить `preserve_reason` / `skip_reason` в montage-plan.
+   Никогда не удаляй `do_not_cut` и не удаляй reaction/punch паузу только потому,
+   что она длиннее порога.
+5. Для каждого keep-клипа собери исполнимый montage: `jump_cuts`,
+   `silence_remove`, `filler_remove`, `glue_notes`, `zoom_punch`,
+   `do_not_cut_before`, `do_not_cut_after`, `estimated_duration_after_cleanup`,
+   `cleanup_planned`. `READY_FOR_CUTTER` только если clean ≥ min_sec−2. Leading
+   silence после hook не в auto-cut. Уважай brief `zoomPunch`.
+6. **Write** `moments/refined-moments.json` (`decision_source: agent`, `authored_by: videoshorts-boundary-refiner`).
+7. **Write** финальный `moments/clip-decisions.json` со всеми REQUIRED decision fields, `selected_by_agent: true` только с evidence.
+8. **Write** `moments/montage-plan.json` (`authored_by: videoshorts-boundary-refiner`).
 
 
 ## Validate

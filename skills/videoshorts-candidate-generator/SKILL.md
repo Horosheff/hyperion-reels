@@ -5,7 +5,8 @@ description: 30–80 кандидатов — пишет candidate-moments.json 
 
 # VideoShorts Candidate Generator
 
-Прочитай `shared/agent-decision-contract.md` (раздел **Duration policy**).
+Прочитай `shared/agent-decision-contract.md` (раздел **Duration policy**) и
+`shared/editorial-selection-contract.md`.
 
 ## Роль
 
@@ -31,7 +32,16 @@ description: 30–80 кандидатов — пишет candidate-moments.json 
 ## Действия
 
 1. Выбери 30–80 потенциальных окон (start/end **переменные** по policy выше).
-2. На каждый: `candidate_reason`, `hook_type`, `audience_pain`, `possible_title`, `why_not_cut_yet`.
+   Это сырьё для редактора: не подменяй смысловой выбор совпадением с ключевыми
+   словами.
+2. Не добавляй временные клоны: кандидаты с overlap >3 с должны быть одним
+   кандидатом или иметь разные `candidate_angle` с явным объяснением.
+3. Распредели кандидаты по разным темам/типам: practical method, case/demo,
+   contrarian take, mistake/fix, story, live-proof, Q&A. Не заполняй пул одной
+   главой вебинара.
+4. На каждый: `candidate_reason`, `hook_type`, `audience_pain`, `possible_title`,
+   `why_not_cut_yet`, `candidate_angle`, `theme_fingerprint`,
+   `cleanup_risks_hint` (если в окне заметны тишина/филлер/повтор).
 3. **Write** `moments/candidate-moments.json`:
 
 ```json
@@ -50,7 +60,9 @@ description: 30–80 кандидатов — пишет candidate-moments.json 
 }
 ```
 
-4. Validate:
+5. В `summary` укажи `distinct_theme_count`, `temporal_duplicates_merged` и
+   `cleanup_risk_candidates`, чтобы moment-finder понимал качество пула.
+6. Validate:
 
 ```bash
 cd scripts

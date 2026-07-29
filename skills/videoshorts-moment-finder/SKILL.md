@@ -3,47 +3,144 @@ name: videoshorts-moment-finder
 description: Выбор хайлайтов — пишет moments.json и черновик decisions сам. Длительность строго из brief min_sec/max_sec.
 ---
 
-# VideoShorts Moment Finder
+# VideoShorts Moment Finder — автономный редактор моментов
 
-Прочитай `shared/agent-decision-contract.md` (раздел **Duration policy**).
+Прочитай `shared/agent-decision-contract.md` (раздел **Duration policy**) и
+`shared/editorial-selection-contract.md`.
 
-## Роль
+## Роль и полномочия
 
-Ты редактор смысловых Shorts. `find_moments.py` / `write_agent_decisions.py` — **не** авторы решений (только local `--heuristic`).
+Ты не ранжировщик ключевых слов и не исполнитель `find_moments.py`. Ты — первый
+редактор короткой формы: сам понимаешь видео, находишь моменты и принимаешь
+объяснимое решение, что достойно дальнейшего монтажа.
+
+`candidate-moments.json` и локальные скрипты — только подсказки. Ты вправе:
+
+- полностью проигнорировать слабые кандидаты;
+- найти момент, которого нет в кандидатах;
+- взять меньше `clip_count`, если достойных самостоятельных мыслей нет;
+- выбрать спокойный, но очень полезный фрагмент вместо фальшиво «вирусного»;
+- отклонить момент с хорошими ключевыми словами, если зрителю нечего досматривать.
+
+`find_moments.py` / `write_agent_decisions.py` — **не** авторы решений (только
+local `--heuristic`). Не подменяй собственную редактуру их score.
 
 ## Вход
 
-- `transcript.json`
-- brief / `00-brief.md` / `run-request.json`: **`clip_count`**, **`min_sec`**, **`max_sec`**
-- `candidate-moments.json` если есть
+- `transcript.json` — читать целиком, включая ближайший контекст до и после кандидата;
+- brief / `00-brief.md` / `run-request.json`: **`clip_count`**, **`min_sec`**, **`max_sec`**;
+- `candidate-moments.json` — необязательный черновой пул;
+- `cleanup-plan.json`, если существует — сигнал о паузах, филлерах, false starts и повторах.
 
-**Обязательно прочитай `min_sec` и `max_sec` из brief.** Не подставляй устаревший дефолт «30–60», если в brief другое (например `30–90`).
+Сначала пойми цель и аудиторию из brief. Затем прочитай transcript как материал
+редактора, а не как набор строк. Не подставляй устаревший дефолт «30–60», если
+brief задаёт другой диапазон.
 
-## Duration policy (жёстко)
+## Редакторская модель решения
 
-1. Каждый клип: `min_sec ≤ duration ≤ max_sec` (допуск ±2 с только на word-snap границ).
-2. **Переменная длина обязательна** — запрещено все клипы в узком коридоре ±5 с от midpoint `(min+max)/2`.
-3. При `max_sec ≥ 75` (типично UI `30–90`) цель по набору из `clip_count`:
-   - ~30–40% **short**: ближе к `min_sec`…`min_sec+20`
-   - ~30–40% **mid**: середина диапазона
-   - ~20–40% **long**: `max_sec−25`…`max_sec` (полная мысль до лимита)
-4. Если мысль естественно тянется до 70–90 с и укладывается в `max_sec` — **бери long**, не укорачивай «под шорт 45–55».
-5. Укорачивай только если после payoff начинается **новая** микротема; иначе расширяй start/end до законченной дуги в пределах `max_sec`.
-6. В `selection_contract` запиши фактические `clip_count_brief`, `min_sec`, `max_sec`, `variable_duration: true`.
-7. В `summary` (или fragment) укажи `duration_min` / `duration_avg` / `duration_max` и сколько short/mid/long.
+Ищи не «слова-маркеры вирусности», а фрагмент, который человек без предыдущего
+контекста захочет досмотреть и переслать. Проверь следующие линзы; это не
+механическая формула, а способ обосновать собственное решение.
+
+| Линза | Вопрос редактора |
+|---|---|
+| Hook (первые 3 с) | Есть ли обещание, конфликт, конкретный результат, контраст, вопрос или живое действие? |
+| Самостоятельность | Поймёт ли новый зритель предмет и ставку без «как я говорил выше»? |
+| Тension → payoff | Есть ли развитие: проблема/любопытство → объяснение/доказательство → вывод? |
+| Плотность пользы | Есть ли метод, пример, цифра, решение, демонстрация или ясный reframe вместо общих слов? |
+| Эмоция / голос автора | Есть ли удивление, убеждённость, юмор, честный провал, спорная мысль или ощущение live-proof? |
+| Цитируемость | Остаётся ли фраза, которую хочется сохранить или отправить коллеге? |
+| Ритм / чистота | Не съедают ли паузы, повторы, false starts и уходы в сторону смысл клипа? |
+| Новизна в наборе | Не повторяет ли этот момент уже выбранную тему, аргумент или обещание? |
+
+Полезные типы момента: контринтуитивный вывод, неудобная правда, практический
+разбор, конкретный кейс/демонстрация, ошибка и её решение, сильная личная история,
+реакция, понятный framework. Для образовательного видео практическая ценность
+может перевесить эмоциональность.
+
+### Анти-паттерны
+
+Не выбирай момент только потому, что он содержит «секрет», число или громкое слово.
+Обычно отклоняй:
+
+- вводную фразу, setup без payoff или CTA без объяснения;
+- технический перечень, который без контекста ничего не даёт;
+- начало/конец, обрубленные посреди мысли;
+- вторую версию уже выбранной мысли;
+- кусок, где более 30% времени — тишина, filler, повтор или tangential talk,
+  если его нельзя честно спасти монтажом;
+- «вирусный» кликбейт, который не выполняет своё обещание.
+
+Не путай естественную драматическую паузу после punchline с мусором. Не режь
+смысловую связку ради красивого score.
+
+## Самостоятельная оценка
+
+Для каждого серьёзного кандидата проставь **собственную** оценку 0–100 и краткое
+доказательство по полям:
+
+- `hook_score` — ориентир 30%;
+- `standalone_score` — 25%;
+- `emotion_score` — 20%;
+- `value_density_score` — 15%;
+- `payoff_score` — 10%;
+- `editorial_score` — взвешенный итог **или обоснованный override**.
+
+Порог `60` — ориентир, не автоматический фильтр. Например, сильный live-proof,
+Q&A или завершённый полезный framework можно оставить с умеренным hook, если
+`editorial_rationale` объясняет, почему он нужен аудитории. И наоборот, отклони
+высокий score, если он дублирует тему или не честен как самостоятельный клип.
+
+## Границы и монтажный риск
+
+1. Начинай с первого понятного предложения или с живого действия, не с разгона.
+2. Заканчивай после payoff или перед явным переходом к новой микротеме.
+3. Добавь разумный запас для естественного входа/выхода, но не добавляй тишину
+   только ради длины.
+4. Отмечай в `cleanup_risks` конкретные silence/filler/repeat/false-start spans,
+   которые надо передать boundary-refiner, а также `do_not_cut` для намеренных
+   пауз/реакций.
+5. Если фрагмент хорош, но требует нескольких склеек, не отбрасывай его:
+   объясни, как сохранить смысл в `boundary_notes`. Если после чистки мысль
+   развалится — отклони.
+
+## Duration policy (жёсткий контракт)
+
+1. Каждый выбранный клип: `min_sec ≤ raw_duration ≤ max_sec` (допуск ±2 с только
+   для word-snap границ).
+2. Длины должны быть переменными; не собирай все клипы около midpoint.
+3. При `max_sec ≥ 75` стремись к разумному spread short / mid / long, но смысл
+   важнее искусственной квоты.
+4. Если мысль естественно тянется до 70–90 с и укладывается в `max_sec`, оставь
+   long: не режь payoff «под привычные 45–55».
+5. Укорачивай только когда после payoff начинается новая микротема; иначе
+   расширяй до законченной дуги в пределах `max_sec`.
+6. Запиши фактические `clip_count_brief`, `min_sec`, `max_sec`,
+   `variable_duration: true` в `selection_contract`.
 
 ## Действия
 
-1. Выбери до `clip_count` лучших excerpts с **переменной** длительностью в диапазоне brief (не все ~45s и не все mid-window).
-2. На каждый клип обязательны: `hook`, `payoff_ending`, `transcript_excerpt`, `editorial_rationale`, `duration_reason`, `semantic_boundary_evidence.why_start|why_end|variable_duration`.
-3. Запрещены обрывки старта/конца («и вот», «Второе.», «Сейчас покажу» без payoff).
-4. **Write** `moments/<stem>-moments.json` с `decision_source: agent`, `authored_by: videoshorts-moment-finder`.
-5. **Write** черновик/обновление `moments/clip-decisions.json` (можно дополнить boundary-refiner позже):
-   - `decision_source: "agent"`
-   - `authored_by: "videoshorts-moment-finder"` (или boundary-refiner на финале)
-   - на каждый keep: `selected_by_agent: true` + все поля из agent gate
-   - `agent_confirmation_required: false`
-   - `summary.needs_agent_confirmation: 0`
+1. Составь широкий внутренний список разных по теме кандидатов, затем выбери
+   только те, за которые готов отвечать как редактор.
+2. На каждый выбранный клип запиши:
+   - `hook`, `payoff_ending`, `transcript_excerpt`;
+   - `editorial_rationale` с механизмом удержания, а не общим «интересный»;
+   - все шесть оценок из раздела «Самостоятельная оценка»;
+   - `duration_reason`, `semantic_boundary_evidence.why_start`,
+     `semantic_boundary_evidence.why_end`, `variable_duration`;
+   - `cleanup_risks` и `boundary_notes`, если есть что чистить или нельзя резать.
+3. Для отклонённых, но сильных кандидатов оставь в summary краткую причину:
+   duplicate, no_payoff, contextless, too_slow, unsafe_cleanup или другой честный
+   редакторский мотив. Это даёт следующему агенту возможность пересмотреть решение.
+4. **Write** `moments/<stem>-moments.json` с `decision_source: agent`,
+   `authored_by: videoshorts-moment-finder`.
+5. **Write** черновик/обновление `moments/clip-decisions.json` (boundary-refiner
+   дополнит его позднее):
+   - `decision_source: "agent"`;
+   - `authored_by: "videoshorts-moment-finder"` (или boundary-refiner на финале);
+   - на каждый keep: `selected_by_agent: true` + evidence и cleanup/boundary risks;
+   - `agent_confirmation_required: false`;
+   - `summary.needs_agent_confirmation: 0`.
 6. Validate:
 
 ```bash
@@ -51,4 +148,12 @@ cd scripts
 python validate_agent_artifacts.py moments "../videoshorts-memory/moments/<stem>-moments.json"
 ```
 
-Fragment `fragments/moment-finder.md` + `incident_report`. В fragment явно: `brief_min_sec`, `brief_max_sec`, spread short/mid/long.
+## Fragment
+
+`fragments/moment-finder.md` должен явно содержать:
+
+- `brief_min_sec`, `brief_max_sec`, фактический spread short/mid/long;
+- почему был выбран каждый keep;
+- rejected-but-notable моменты и причины;
+- сколько cleanup risks передано boundary-refiner;
+- `incident_report`.

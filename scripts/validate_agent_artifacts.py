@@ -38,6 +38,23 @@ def _clips_list(data: dict) -> list:
     return clips if isinstance(clips, list) else []
 
 
+def _clip_index(clip: dict, fallback: int) -> str:
+    return str(clip.get("index") if clip.get("index") is not None else fallback)
+
+
+def _is_keep(clip: dict) -> bool:
+    if "keep" in clip:
+        return bool(clip.get("keep"))
+    return str(clip.get("status") or "").upper() in {"KEEP", "PASS", "READY_FOR_CUTTER"}
+
+
+def _overlap_seconds(left: dict, right: dict) -> float:
+    try:
+        return max(0.0, min(float(left["end"]), float(right["end"])) - max(float(left["start"]), float(right["start"])))
+    except (KeyError, TypeError, ValueError):
+        return 0.0
+
+
 CLEAN_DURATION_TOLERANCE_SEC = 2.0
 
 
@@ -189,6 +206,9 @@ def validate_moments(path: Path) -> tuple[bool, list[str]]:
         for field in ("start", "end", "hook", "payoff_ending", "transcript_excerpt", "editorial_rationale"):
             if clip.get(field) in (None, ""):
                 errors.append(f"clips[{i}]: missing {field}")
+        for field in ("cleanup_risks", "do_not_cut"):
+            if not isinstance(clip.get(field), list):
+                errors.append(f"clips[{i}]: missing {field}[]")
         evidence = clip.get("semantic_boundary_evidence")
         if not isinstance(evidence, dict):
             errors.append(f"clips[{i}]: missing semantic_boundary_evidence")
@@ -368,12 +388,98 @@ def validate_montage_plan(path: Path) -> tuple[bool, list[str]]:
             continue
         if "jump_cuts" not in clip and "silence_remove" not in clip:
             errors.append(f"clips[{i}]: need jump_cuts or silence_remove")
-        if not clip.get("glue_notes") and clip.get("glue_notes") != "":
-            # glue_notes recommended
-            pass
+        if clip.get("jump_cuts") and not clip.get("glue_notes"):
+            errors.append(f"clips[{i}]: jump_cuts require glue_notes")
         if "do_not_cut_before" not in clip and "do_not_cut_after" not in clip:
             errors.append(f"clips[{i}]: need do_not_cut_before/after guidance")
     _gate_estimated_clean_duration(data, path, errors, label="montage-plan")
+    return not errors, errors
+
+
+def validate_editorial_bundle(path: Path) -> tuple[bool, list[str]]:
+    """Cross-artifact contract before cutter. Path is the moments directory."""
+    root = path if path.is_dir() else path.parent
+    errors: list[str] = []
+    paths = {
+        "moments": next(iter(sorted(root.glob("*-moments.json"))), None),
+        "scores": root / "clip-scores.json",
+        "editor": root / "editor-review.json",
+        "virality": root / "virality-review.json",
+        "refined": root / "refined-moments.json",
+        "decisions": root / "clip-decisions.json",
+        "montage": root / "montage-plan.json",
+    }
+    required = ("scores", "editor", "virality", "refined", "decisions", "montage")
+    for key in required:
+        if not paths[key] or not Path(paths[key]).is_file():
+            errors.append(f"editorial-bundle: missing {key} artifact")
+    if errors:
+        return False, errors
+
+    payloads = {key: _load(Path(value)) for key, value in paths.items() if value and Path(value).is_file()}
+    for key, data in payloads.items():
+        if not isinstance(data, dict) or data.get("__error__"):
+            errors.append(f"editorial-bundle: invalid {key} JSON")
+    if errors:
+        return False, errors
+
+    maps = {
+        key: {_clip_index(clip, i): clip for i, clip in enumerate(_clips_list(data), 1) if isinstance(clip, dict)}
+        for key, data in payloads.items()
+    }
+    editor_map = maps["editor"]
+    for key in ("scores", "virality"):
+        if set(maps[key]) != set(editor_map):
+            errors.append(f"editorial-bundle: {key} indices do not match editor-review")
+    decisions_map = maps["decisions"]
+    refined_map = maps["refined"]
+    montage_map = maps["montage"]
+
+    keeps: list[tuple[str, dict]] = []
+    for index, editor_clip in editor_map.items():
+        score = maps["scores"].get(index, {})
+        virality = maps["virality"].get(index, {})
+        if _is_keep(editor_clip):
+            keeps.append((index, editor_clip))
+            if str(score.get("status") or "").upper() == "REJECT":
+                errors.append(f"editorial-bundle: keep {index} conflicts with score REJECT")
+            if str(virality.get("status") or "").upper() == "REJECT":
+                errors.append(f"editorial-bundle: keep {index} conflicts with virality REJECT")
+            if editor_clip.get("duplicate_theme") is True:
+                errors.append(f"editorial-bundle: keep {index} marked duplicate_theme")
+            if not editor_clip.get("theme_fingerprint"):
+                errors.append(f"editorial-bundle: keep {index} missing theme_fingerprint")
+            if index not in refined_map or index not in decisions_map or index not in montage_map:
+                errors.append(f"editorial-bundle: keep {index} missing refined/decision/montage entry")
+                continue
+            if not decisions_map[index].get("selected_by_agent"):
+                errors.append(f"editorial-bundle: keep {index} not selected_by_agent")
+            if str(montage_map[index].get("status") or "").upper() != "READY_FOR_CUTTER":
+                errors.append(f"editorial-bundle: keep {index} montage not READY_FOR_CUTTER")
+
+            risks = refined_map[index].get("cleanup_risks", [])
+            remove_risks = [risk for risk in risks if isinstance(risk, dict) and risk.get("action") == "remove"]
+            montage = montage_map[index]
+            executed = [
+                *(montage.get("jump_cuts") or []),
+                *((montage.get("silence_remove") or {}).get("items") or []),
+                *((montage.get("filler_remove") or {}).get("items") or []),
+            ]
+            skipped = [
+                *(montage.get("cleanup_skipped_for_min_duration") or []),
+                *((montage.get("cleanup_planned") or {}).get("preserved") or []),
+                *((montage.get("cleanup_planned") or {}).get("skipped") or []),
+            ]
+            for risk in remove_risks:
+                if not any(_overlap_seconds(risk, item) > 0 for item in [*executed, *skipped] if isinstance(item, dict)):
+                    errors.append(f"editorial-bundle: keep {index} cleanup remove risk not resolved in montage")
+
+    for left_pos, (left_index, left) in enumerate(keeps):
+        left_bounds = refined_map.get(left_index, left)
+        for right_index, right in keeps[left_pos + 1:]:
+            right_bounds = refined_map.get(right_index, right)
+            if _overlap_seconds(left_bounds, right_bounds) > 3.0:
+                errors.append(f"editorial-bundle: keep {left_index}/{right_index} overlap exceeds 3s")
     return not errors, errors
 
 
@@ -472,6 +578,7 @@ VALIDATORS: dict[str, Callable[[Path], tuple[bool, list[str]]]] = {
     "clip-decisions": validate_clip_decisions,
     "dramaturgy-report": validate_dramaturgy_report,
     "montage-plan": validate_montage_plan,
+    "editorial-bundle": validate_editorial_bundle,
     "post-render-review": validate_post_render_review,
     "metadata": validate_metadata,
 }

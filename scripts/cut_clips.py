@@ -99,7 +99,10 @@ def main() -> None:
                 items.append({**item, "source": "silence_remove"})
         fillers = montage_item.get("filler_remove") or {}
         for item in fillers.get("items", []) or []:
-            if isinstance(item, dict) and item.get("safe", False):
+            # Items in montage-plan are agent-authorized. Legacy heuristic plans
+            # still carry safe=true; agent plans must not silently lose fillers
+            # just because that redundant flag was omitted.
+            if isinstance(item, dict) and item.get("safe", True):
                 items.append({**item, "source": "filler_remove"})
 
         intervals: list[tuple[float, float]] = []
@@ -142,6 +145,7 @@ def main() -> None:
         return intervals, {
             "applied": bool(intervals),
             "removed_seconds": removed_seconds,
+            "planned_items": len(items),
             "items": applied_items,
             "skipped": skipped_items,
             "min_duration_guard": args.min_duration,

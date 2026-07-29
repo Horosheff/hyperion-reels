@@ -58,6 +58,24 @@
 
 - **Raw window ≥ min_sec, финал короче:** jump cuts / silence_remove укорачивают MP4. Boundary + montage обязаны гейтить `estimated_duration_after_cleanup` (≥ `brief.min_sec − 2`), не только raw `duration`. Иначе Guardian валит 7/10 «out of range». `validate_agent_artifacts` refined-moments / montage-plan проверяет поле; heuristic `refine_boundaries` / `montage_plan` expand или REJECT/REVIEW.
 
+- **Cleanup найден, но не вырезан:** `cleanup-plan.json` — только инвентарь. Реальные
+  cuts появляются только в `montage-plan.json`, а доказательство — в
+  `manifest.json.cleanup_applied`. Не называй overlap с cleanup-plan «удалённой
+  паузой». Для `repeated_word` / `false_start` нужен явный `jump_cuts` с
+  `agent_reason` и `glue_notes`; иначе они остаются review-only.
+
+- **Агрессивная чистка ломает речь:** default — умная чистка: удалять явную тишину,
+  филлеры, повторы и false starts, но сохранять punch/reaction паузы и естественную
+  интонацию. Не режь «всё подряд» и не обходи `min_sec−2` gate ради темпа.
+
+- **Filler попал в montage, но не применился:** cutter исполняет только
+  `filler_remove.items` с `safe: true` (или с агентной авторизацией после фикса).
+  Boundary-refiner обязан указывать `safe: true`, `reason` и проверить manifest.
+
+- **Дубли клипов прошли в publish:** `duplicate_theme` — не декоративный флаг.
+  Editor должен reject один из клипов при том же тезисе или temporal overlap >3 с,
+  если нет documented override.
+
 - **Пунктуация не равна завершённой теме:** хвосты `Второе.`, `Первое.`, `Дальше.`, `Сейчас объясню`, `Сейчас покажу`, `Так.` не являются payoff. Такой клип надо расширить/сдвинуть или заменить до cutter.
 
 - **Scorekeeper не автор смысла:** `weak_hook` от regex — повод для редакторской проверки, а не автоматическое уничтожение хорошей завершённой Q&A-микротемы. Жёстко блокируют `incomplete_thought`, `too_short`, `too_long`, обрывки начала/конца.

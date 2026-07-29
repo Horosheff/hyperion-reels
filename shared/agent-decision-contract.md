@@ -3,6 +3,8 @@
 ## Правило
 
 В **Agent mode** субагент — единственный автор смысловых артефактов.
+Для отбора, дедупликации и чистки дополнительно обязателен
+`shared/editorial-selection-contract.md`.
 
 | Слой | Делает |
 |------|--------|
@@ -50,6 +52,19 @@
 `dramaturgy-report.json` в slim **не обязателен** (packager терпит отсутствие).
 
 `clip-decisions.json` — канонический agent gate перед cutter/packager.
+
+## Cleanup: обнаружено, одобрено, вырезано
+
+Не путай три разных состояния:
+
+1. `cleanup-plan.json` — обнаруженные silence/filler/repeat/false-start spans;
+2. `montage-plan.json` — одобренные агентом интервалы для FFmpeg;
+3. `output/clips/<stem>/manifest.json` — фактически применённые cutter интервалы.
+
+Повторы и false starts не являются auto-cut: boundary-refiner может добавить их
+в `jump_cuts` только с причиной и `glue_notes`. UI должен показывать отдельно
+`cleanup_planned` и `cleanup_rendered`, а не называть overlap из cleanup-plan
+фактическим удалением.
 
 ## Duration policy (brief → агенты)
 

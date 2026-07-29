@@ -147,7 +147,11 @@ def build_decisions(
                 or "Нет подтверждённого evidence завершённой мысли.",
                 420,
             ),
+            # This is a plan overlap, not proof that FFmpeg removed anything.
+            # Post-cutter truth lives in manifest.json.cleanup_applied.
             "cleanup_applied": bool(cleanup_items),
+            "cleanup_planned": bool(cleanup_items),
+            "cleanup_rendered": None,
             "silence_removed": {
                 "count": len(silence_items),
                 "seconds": _duration(silence_items),

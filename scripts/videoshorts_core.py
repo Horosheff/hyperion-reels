@@ -135,6 +135,12 @@ def build_latest_results(
     retry_plan = _read_json(retry_plan_path, {})
     run_state = _read_json(run_state_path, {})
 
+    manifest_by_index = {
+        str(item.get("index")): item
+        for item in manifest.get("clips", [])
+        if isinstance(item, dict) and item.get("index") is not None
+    } if isinstance(manifest, dict) else {}
+
     qa_by_file = {
         str(item.get("file")): item
         for item in qa_report.get("clips", [])
@@ -270,6 +276,15 @@ def build_latest_results(
         post_render_item = post_render_by_index.get(idx, {})
         retry_item = retry_by_index.get(idx, {})
         broll_item = broll_by_index.get(idx, {})
+        manifest_item = manifest_by_index.get(idx, {})
+        cleanup_rendered = manifest_item.get("cleanup_applied") if isinstance(manifest_item, dict) else {}
+        cleanup_planned = {
+            "applied": decision_item.get("cleanup_applied") if decision_item else None,
+            "silence_removed": decision_item.get("silence_removed") if decision_item else None,
+            "fillers_removed": decision_item.get("fillers_removed") if decision_item else None,
+            "glue_or_transition_notes": decision_item.get("glue_or_transition_notes") if decision_item else None,
+            "review_items": decision_item.get("cleanup_review_items") if decision_item else None,
+        }
         ass_name = subtitles.get("ass") or packaged.get("ass")
         srt_name = subtitles.get("srt") or packaged.get("srt")
         cover_path = cover_item.get("cover_path")
@@ -311,11 +326,10 @@ def build_latest_results(
             "cleanup": {
                 "summary": cleanup_plan.get("summary") if isinstance(cleanup_plan, dict) else None,
                 "filler_items": len(filler_plan.get("items", [])) if isinstance(filler_plan, dict) else 0,
-                "applied": decision_item.get("cleanup_applied") if decision_item else None,
-                "silence_removed": decision_item.get("silence_removed") if decision_item else None,
-                "fillers_removed": decision_item.get("fillers_removed") if decision_item else None,
-                "glue_or_transition_notes": decision_item.get("glue_or_transition_notes") if decision_item else None,
-                "review_items": decision_item.get("cleanup_review_items") if decision_item else None,
+                "cleanup_planned": cleanup_planned,
+                "cleanup_rendered": cleanup_rendered or None,
+                "applied": cleanup_rendered.get("applied") if isinstance(cleanup_rendered, dict) else None,
+                "removed_seconds": cleanup_rendered.get("removed_seconds") if isinstance(cleanup_rendered, dict) else 0.0,
             },
             "audio": audio_item or None,
             "audio_qa": audio_qa_item or None,
@@ -403,8 +417,8 @@ def build_latest_results(
             "cleanup_applied_clips": len([
                 item for item in clips
                 if isinstance(item.get("cleanup"), dict)
-                and (item.get("montage_plan") or {})
-                and (manifest.get("clips", [])[item["index"] - 1].get("cleanup_applied", {}).get("applied") if item.get("index") and item["index"] - 1 < len(manifest.get("clips", [])) else False)
+                and isinstance(item["cleanup"].get("cleanup_rendered"), dict)
+                and item["cleanup"]["cleanup_rendered"].get("applied")
             ]),
             "audio_warn": audio_metrics.get("summary", {}).get("warn") if isinstance(audio_metrics, dict) else None,
             "retry_failed_clips": len(retry_plan.get("failed_clips", [])) if isinstance(retry_plan, dict) else 0,

@@ -70,6 +70,8 @@ def detect_silence_gaps(segments: list, words: list[dict], threshold: float) -> 
                 "previous": prev[2],
                 "next": curr[2],
                 "action": "candidate_trim_gap",
+                "editorial_action": "remove",
+                "reason": "silence_gap",
                 "safe": True,
             })
     return gaps
@@ -88,6 +90,8 @@ def detect_fillers(segments: list, words: list[dict]) -> list[dict]:
                     "start": round(_float(word.get("start")), 3),
                     "end": round(_float(word.get("end"), word.get("start")), 3),
                     "action": "candidate_remove_word",
+                    "editorial_action": "remove",
+                    "reason": "filler_word",
                     "safe": True,
                 })
         return findings
@@ -102,6 +106,8 @@ def detect_fillers(segments: list, words: list[dict]) -> list[dict]:
                     "start": round(float(seg.start), 3),
                     "end": round(float(seg.end), 3),
                     "action": "review_segment_for_filler",
+                    "editorial_action": "review",
+                    "reason": "segment_level_filler_without_word_timestamps",
                     "safe": False,
                 })
     return findings
@@ -126,6 +132,8 @@ def detect_repeats_and_false_starts(segments: list) -> list[dict]:
                 "tokens": sorted(set(repeated)),
                 "text": _clean(seg.text)[:220],
                 "action": "review_repeat",
+                "editorial_action": "review",
+                "reason": "repeated_word_requires_glue_review",
                 "safe": False,
             })
 
@@ -141,6 +149,8 @@ def detect_repeats_and_false_starts(segments: list) -> list[dict]:
                         "phrase": " ".join(head),
                         "text": _clean(seg.text)[:220],
                         "action": "review_false_start",
+                        "editorial_action": "review",
+                        "reason": "false_start_requires_glue_review",
                         "safe": False,
                     })
                     break
@@ -160,6 +170,8 @@ def detect_repeats_and_false_starts(segments: list) -> list[dict]:
                 "end": round(float(curr.end), 3),
                 "phrase": " ".join(curr_head[:overlap]),
                 "action": "review_boundary_repeat",
+                "editorial_action": "review",
+                "reason": "cross_segment_repeat_requires_glue_review",
                 "safe": False,
             })
     return findings
@@ -193,10 +205,12 @@ def build_plan(transcript_path: Path, gap_threshold: float) -> tuple[dict, dict]
         "repeat_false_start_candidates": repeats,
         "safe_removal_plan": safe_removals,
         "review_only": review_only,
+        "preserve_plan": [],
         "notes": [
             "План не изменяет transcript.json.",
             "safe=true означает кандидат на аккуратный trim/removal, но финальное решение принимает агент.",
             "Повторы и false starts по умолчанию review-only.",
+            "editorial_action=remove/review — исходная гипотеза; агент может добавить preserve_plan.",
         ],
     }
     filler_plan = {

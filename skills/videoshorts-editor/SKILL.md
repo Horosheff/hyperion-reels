@@ -5,7 +5,8 @@ description: Единый редактор Shorts — scores + keep/reject + vir
 
 # VideoShorts Editor (единый редакционный gate)
 
-Прочитай `shared/agent-decision-contract.md` и `shared/agent-pipeline-pitfalls.md`.
+Прочитай `shared/agent-decision-contract.md`, `shared/editorial-selection-contract.md`
+и `shared/agent-pipeline-pitfalls.md`.
 
 ## Роль
 
@@ -46,8 +47,25 @@ description: Единый редактор Shorts — scores + keep/reject + vir
 - `keep: true|false` (или `status: KEEP|REJECT`)
 - `editor_notes` — зачем keep/reject (обязательно)
 - флаги: `needs_context`, `too_slow`, `no_payoff`, `duplicate_theme`
+- `theme_fingerprint` — одно предложение: главный тезис/обещание клипа
+- `dedupe_evidence`: `overlaps_seconds_with`, `same_argument_with`,
+  `decision` и краткая причина
 
 **Правило согласованности:** если scores `REJECT` — в editor тоже reject (кроме явного override с доказательством в notes, что хвост/hook починен словами транскрипта).
+
+### Дедупликация — обязательный финальный gate
+
+Проверь все KEEP как единый набор, а не по одному:
+
+1. При temporal overlap более 3 секунд оставь один лучший вариант; второй REJECT
+   с `duplicate_theme: true` или `overlap_duplicate`.
+2. При одном тезисе/аргументе оставь вариант с лучшим hook, payoff, доказательством
+   или другой платформенной задачей. Одинаковая тема с разными словами — дубль.
+3. Не ставь `duplicate_theme: false` по умолчанию. В `editor_notes` объясни, почему
+   похожие клипы всё же различаются, если сохраняешь оба.
+4. Учитывай `cleanup_risks`: reject `too_slow_high_silence` только если
+   boundary-refiner не сможет убрать мусор без развала смысла; иначе KEEP с
+   `boundary_note`.
 
 ### 3) Virality-измерения (бывший virality-critic)
 
@@ -98,7 +116,13 @@ description: Единый редактор Shorts — scores + keep/reject + vir
       "needs_context": false,
       "too_slow": false,
       "no_payoff": false,
-      "duplicate_theme": false
+      "duplicate_theme": false,
+      "theme_fingerprint": "…",
+      "dedupe_evidence": {
+        "overlaps_seconds_with": [],
+        "same_argument_with": [],
+        "decision": "unique"
+      }
     }
   ],
   "summary": { "keep": 1, "reject": 0 }

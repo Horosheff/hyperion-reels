@@ -230,7 +230,7 @@ def main() -> None:
         estimated_clean = round(raw_duration - estimated_removed, 3)
         d = dramaturgy.get(str(idx), {})
         jump_cuts = []
-        for item in applied_silences[:8]:
+        for item in applied_silences:
             jump_cuts.append({
                 "start": item.get("start"),
                 "end": item.get("end"),
@@ -271,6 +271,12 @@ def main() -> None:
             "cleanup_min_duration_guard": min_duration,
             "min_clean_gate_sec": min_clean_gate,
             "cleanup_skipped_for_min_duration": skipped_cleanup[:12],
+            "cleanup_planned": {
+                "items": applied_cleanup,
+                "count": len(applied_cleanup),
+                "preserved": preserved[:8],
+                "skipped": skipped_cleanup[:12],
+            },
             "jump_cuts": jump_cuts,
             "silence_remove": {
                 "count": len(applied_silences),
