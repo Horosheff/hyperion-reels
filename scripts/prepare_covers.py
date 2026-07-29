@@ -12,7 +12,7 @@ from pathlib import Path
 
 from kie_client import KieApiError, KieClient, load_api_key
 from publish_selection import load_selection
-from videoshorts_core import configure_stdio, find_ffmpeg
+from videoshorts_core import _run_ffmpeg, configure_stdio, find_ffmpeg
 
 configure_stdio()
 
@@ -93,8 +93,8 @@ def extract_cover(video: Path, output: Path, *, at_sec: float = 1.0) -> bool:
         "-q:v", "2",
         str(output),
     ]
-    result = subprocess.run(cmd, capture_output=True)
-    return result.returncode == 0 and output.is_file() and output.stat().st_size > 0
+    result = _run_ffmpeg(cmd, label="extract_cover")
+    return result and output.is_file() and output.stat().st_size > 0
 
 
 def resolve_brand(brand_dir: Path) -> tuple[Path | None, list[Path]]:

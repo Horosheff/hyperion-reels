@@ -230,21 +230,38 @@ def _clip_payload(clips_dir: Path, index: int) -> dict:
     return base
 
 
+def _client_timeout() -> int:
+    try:
+        return max(120, int(os.getenv("VIDEOSHORTS_PUBLISH_CLIENT_TIMEOUT", "900")))
+    except ValueError:
+        return 900
+
+
 def run_client(cfg: dict, args: list[str]) -> dict:
     client = Path(cfg["client"])
     if not client.is_file():
         return {"ok": False, "error": f"instagram_client not found: {client}"}
     cmd = [sys.executable, str(client), *args]
     started = datetime.now(timezone.utc).isoformat()
-    result = subprocess.run(
-        cmd,
-        cwd=str(cfg["cwd"]),
-        env=build_env(cfg),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(cfg["cwd"]),
+            env=build_env(cfg),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_client_timeout(),
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "error": f"timeout {_client_timeout()}с (env VIDEOSHORTS_PUBLISH_CLIENT_TIMEOUT)",
+            "started_at": started,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "cmd": cmd[1:],
+        }
     return {
         "ok": result.returncode == 0,
         "returncode": result.returncode,

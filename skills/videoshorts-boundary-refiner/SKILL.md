@@ -69,4 +69,12 @@ python validate_agent_artifacts.py clip-decisions "../videoshorts-memory/moments
 python validate_agent_artifacts.py montage-plan "../videoshorts-memory/moments/montage-plan.json"
 ```
 
+**Editorial-bundle gate (обязательно после записи всех трёх артефактов):**
+
+```bash
+python validate_agent_artifacts.py editorial-bundle "../videoshorts-memory/moments"
+```
+
+Если bundle не прошёл — исправь расхождения (keep-индексы, READY_FOR_CUTTER, cleanup remove→montage, overlap > 3s) **до** передачи cutter. Без bundle PASS cutter не запускать.
+
 Fragment `fragments/boundary-refiner.md` + `incident_report` (укажи, что montage-plan тоже написан).

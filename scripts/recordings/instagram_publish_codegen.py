@@ -1,6 +1,16 @@
+"""Playwright codegen reference — Instagram publish flow (dev artifact).
+
+Recorded once for selector research. Not used by the pipeline; real publishing
+goes through `publish_instagram.py` / `instagram_client.py`.
+"""
+
 import asyncio
+import os
 import re
+
 from playwright.async_api import Playwright, async_playwright, expect
+
+PROFILE_URL = os.getenv("VIDEOSHORTS_INSTAGRAM_PROFILE_URL", "https://www.instagram.com/")
 
 
 async def run(playwright: Playwright) -> None:
@@ -23,7 +33,7 @@ async def run(playwright: Playwright) -> None:
     await page.get_by_role("textbox", name="Добавьте подпись…").fill("текст")
     await page.locator(".html-div.xdj266r.x14z9mp.xat24cr.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x9f619.xjbqb8w.x78zum5.x15mokao.x1ga7v0g.x16uus16.xbiv7yw.x13fj5qh > .x1lliihq > path").first.click()
     await page.get_by_role("textbox", name="Добавить место").fill("Москва")
-    await page.goto("https://www.instagram.com/artur_horoshev/")
+    await page.goto(PROFILE_URL)
 
     # ---------------------
     await context.storage_state(path="cookies/storage_state.json")

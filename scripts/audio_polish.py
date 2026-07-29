@@ -16,8 +16,10 @@ from videoshorts_core import configure_stdio, find_ffmpeg
 configure_stdio()
 
 
-def _run(cmd: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+def _run(cmd: list[str], timeout: int = 600) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout
+    )
 
 
 def probe_audio_stream(path: Path) -> dict:

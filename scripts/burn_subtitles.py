@@ -14,7 +14,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from videoshorts_core import configure_stdio, find_ffmpeg
+from videoshorts_core import _run_ffmpeg, configure_stdio, find_ffmpeg
 from quality_presets import resolve_preset, video_encode_args
 
 configure_stdio()
@@ -35,7 +35,7 @@ def probe_duration(path: Path) -> float | None:
         str(path),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode == 0:
             return float(result.stdout.strip())
     except Exception:
@@ -52,7 +52,7 @@ def probe_resolution(path: Path) -> tuple[int, int] | None:
         str(path),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode == 0 and "x" in result.stdout:
             w, h = result.stdout.strip().split("x", 1)
             return int(w), int(h)
@@ -130,8 +130,8 @@ def apply_video_filter(input_mp4: Path, output_mp4: Path, vf: str, quality_prese
         "-c:a", "copy",
         str(output_mp4),
     ]
-    result = subprocess.run(cmd, capture_output=True)
-    return result.returncode == 0 and output_mp4.is_file()
+    result = _run_ffmpeg(cmd, label="apply_video_filter")
+    return result and output_mp4.is_file()
 
 
 def build_subtitle_filter(sub_path: Path, font_size: int = 42, margin_v: int = 80) -> tuple[str, Path | None]:
@@ -178,8 +178,8 @@ def render_final_clip(
         "-c:a", "copy",
         str(output_mp4),
     ]
-    result = subprocess.run(cmd, capture_output=True)
-    return result.returncode == 0 and output_mp4.is_file() and output_mp4.stat().st_size > 0
+    result = _run_ffmpeg(cmd, label="render_final_clip")
+    return result and output_mp4.is_file() and output_mp4.stat().st_size > 0
 
 
 def burn_subtitles(

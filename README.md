@@ -42,6 +42,16 @@
 
 Система не режет «по таймеру». Субагенты понимают речь, выбирают законченные мысли в диапазоне `min–max` из UI (например 30–90 с), отбраковывают слабое, уточняют границы и только потом режут, субтитруют и упаковывают.
 
+### Что нового в 0.4.6
+
+| Возможность | Суть |
+|-------------|------|
+| **Атомарные JSON** | `scripts/json_store.py`: tmp + `os.replace` + межпроцессный lock — `publish-queue.json`, `latest-results.json`, `run-status.json` больше не бьются при параллельной публикации |
+| **Security UI bridge** | Path confinement `/ui/` → `ui/` только, denylist secrets/.env/.git, same-origin CSRF gate на POST, CORS вместо `*` — echo только localhost-Origin |
+| **Таймауты везде** | ffmpeg/whisper/Playwright publish/login больше не висят вечно: `VIDEOSHORTS_FFMPEG_TIMEOUT`, `VIDEOSHORTS_WHISPER_TIMEOUT`, `VIDEOSHORTS_PUBLISH_TIMEOUT`, `VIDEOSHORTS_PUBLISH_CLIENT_TIMEOUT`, `VIDEOSHORTS_LOGIN_TIMEOUT` + stderr tail в логах |
+| **Playwright в deps** | `ensure_dependencies.py` проверяет и ставит `playwright` + `chromium` браузер |
+| **Editorial-bundle gate** | boundary-refiner и cutter обязаны прогонять `validate_agent_artifacts.py editorial-bundle` перед резкой |
+
 ### Что нового в 0.4.5
 
 | Возможность | Суть |

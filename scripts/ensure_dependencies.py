@@ -30,6 +30,9 @@ PIP_PACKAGES: list[dict[str, str]] = [
     {"import_name": "mediapipe", "pip_name": "mediapipe", "label": "MediaPipe"},
     {"import_name": "faster_whisper", "pip_name": "faster-whisper", "label": "faster-whisper"},
     {"import_name": "tqdm", "pip_name": "tqdm", "label": "tqdm"},
+    {"import_name": "playwright", "pip_name": "playwright", "label": "Playwright"},
+    {"import_name": "dotenv", "pip_name": "python-dotenv", "label": "python-dotenv"},
+    {"import_name": "requests", "pip_name": "requests", "label": "requests"},
 ]
 
 
@@ -139,6 +142,38 @@ def check_nvidia_optional() -> dict[str, Any]:
     }
 
 
+def _playwright_browser_dirs() -> list[Path]:
+    candidates: list[Path] = []
+    local_appdata = os.getenv("LOCALAPPDATA")
+    if local_appdata:
+        candidates.append(Path(local_appdata) / "ms-playwright")
+    candidates.append(Path.home() / ".cache" / "ms-playwright")
+    candidates.append(Path.home() / "Library" / "Caches" / "ms-playwright")
+    return candidates
+
+
+def check_playwright_browser() -> dict[str, Any]:
+    playwright_available, _ = module_available("playwright")
+    browsers: list[str] = []
+    for root in _playwright_browser_dirs():
+        if root.is_dir():
+            browsers.extend(p.name for p in root.glob("chromium-*"))
+    available = playwright_available and bool(browsers)
+    return {
+        "id": "playwright-chromium",
+        "label": "Playwright Chromium (публикация)",
+        "required": False,
+        "available": available,
+        "version": browsers[0] if browsers else None,
+        "detail": {
+            "playwright_module": playwright_available,
+            "browsers": browsers,
+        },
+        "installable": True,
+        "install_hint": "python -m playwright install chromium",
+    }
+
+
 def collect_checks() -> list[dict[str, Any]]:
     checks = [check_python(), check_ffmpeg()]
     checks.extend(
@@ -146,6 +181,7 @@ def collect_checks() -> list[dict[str, Any]]:
         for item in PIP_PACKAGES
     )
     checks.append(check_nvidia_optional())
+    checks.append(check_playwright_browser())
     return checks
 
 
@@ -225,6 +261,15 @@ def install_ffmpeg() -> dict[str, Any]:
     }
 
 
+def install_playwright_browser() -> dict[str, Any]:
+    playwright_available, _ = module_available("playwright")
+    if not playwright_available:
+        return {"ok": False, "error": "playwright module не установлен"}
+    command = [sys.executable, "-m", "playwright", "install", "chromium"]
+    code, output = run_command(command, timeout=1800)
+    return {"ok": code == 0, "command": command, "output": output}
+
+
 def ensure_dependencies(install: bool = False) -> dict[str, Any]:
     actions: list[dict[str, Any]] = []
     before = summarize(collect_checks())
@@ -243,6 +288,12 @@ def ensure_dependencies(install: bool = False) -> dict[str, Any]:
         if "ffmpeg" in after_pip["missing_installable"]:
             ffmpeg_result = install_ffmpeg()
             actions.append({"step": "ffmpeg", **ffmpeg_result})
+
+    if install:
+        browser_check = check_playwright_browser()
+        if browser_check.get("installable") and not browser_check.get("available"):
+            browser_result = install_playwright_browser()
+            actions.append({"step": "playwright-chromium", **browser_result})
 
     after = summarize(collect_checks())
     report = {

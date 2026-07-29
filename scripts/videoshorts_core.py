@@ -21,6 +21,11 @@ _ROOT = Path(__file__).resolve().parent
 _PLUGIN_ROOT = _ROOT.parent
 _TRANSCRIBE_WORKER = _ROOT / "transcribe_worker.py"
 
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+import json_store
+
 
 def configure_stdio() -> None:
     if sys.platform != "win32":
@@ -461,10 +466,7 @@ def write_latest_results(
     memory_root = _PLUGIN_ROOT / "videoshorts-memory"
     target = latest_path or (memory_root / "output" / "latest-results.json")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps(build_latest_results(clips_dir, **kwargs), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    json_store.write_json(target, build_latest_results(clips_dir, **kwargs))
     return target
 
 
@@ -538,6 +540,37 @@ def find_ffmpeg() -> str:
     return ffmpeg
 
 
+def _ffmpeg_timeout() -> int:
+    try:
+        return max(60, int(os.getenv("VIDEOSHORTS_FFMPEG_TIMEOUT", "3600")))
+    except ValueError:
+        return 3600
+
+
+def _stderr_tail(text: str | bytes | None, limit: int = 4000) -> str:
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", errors="replace")
+    return (text or "")[-limit:].strip()
+
+
+def _run_ffmpeg(cmd: list[str], *, label: str = "ffmpeg") -> bool:
+    """Run ffmpeg with a timeout; log the stderr tail on failure instead of silence."""
+    timeout = _ffmpeg_timeout()
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(
+            f"[ERROR] {label}: таймаут {timeout}с (env VIDEOSHORTS_FFMPEG_TIMEOUT): {cmd[0]} …",
+            file=sys.stderr,
+        )
+        return False
+    if proc.returncode != 0:
+        tail = _stderr_tail(proc.stderr, 2000)
+        print(f"[ERROR] {label}: exit {proc.returncode}: {tail}", file=sys.stderr)
+        return False
+    return True
+
+
 def extract_audio(video_path: Path, output_path: Path) -> bool:
     ffmpeg = find_ffmpeg()
     cmd = [
@@ -545,7 +578,7 @@ def extract_audio(video_path: Path, output_path: Path) -> bool:
         "-vn", "-ac", "1", "-ar", "16000",
         str(output_path),
     ]
-    return subprocess.run(cmd, capture_output=True).returncode == 0
+    return _run_ffmpeg(cmd, label="extract_audio")
 
 
 def whisper_subprocess_python() -> str:
@@ -569,9 +602,18 @@ def transcribe(audio_path: Path, model_size: str = "base") -> Tuple[List[Segment
     tmpdir = Path(tempfile.mkdtemp(prefix="vs_whisper_"))
     out_json = tmpdir / "segments.json"
     try:
+        whisper_timeout = max(300, int(os.getenv("VIDEOSHORTS_WHISPER_TIMEOUT", "7200")))
+    except ValueError:
+        whisper_timeout = 7200
+    try:
         cmd = [py, "-u", str(_TRANSCRIBE_WORKER), str(audio_path.resolve()), model_size, str(out_json)]
         env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
-        p = subprocess.run(cmd, cwd=str(_ROOT), env=env)
+        try:
+            p = subprocess.run(cmd, cwd=str(_ROOT), env=env, timeout=whisper_timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"transcribe_worker timeout {whisper_timeout}с (env VIDEOSHORTS_WHISPER_TIMEOUT)"
+            ) from exc
         if p.returncode != 0:
             raise RuntimeError(f"transcribe_worker failed with exit code {p.returncode}")
         if not out_json.is_file():
@@ -1321,7 +1363,7 @@ def create_webinar_split(
         *audio_encode_args(quality_preset),
         str(output_path),
     ]
-    return subprocess.run(cmd, capture_output=True).returncode == 0
+    return _run_ffmpeg(cmd, label="split_vertical")
 
 
 def _face_crop_box(
@@ -1501,7 +1543,7 @@ def create_face_vertical(
         *audio_encode_args(quality_preset),
         str(output_path),
     ]
-    return subprocess.run(cmd, capture_output=True).returncode == 0
+    return _run_ffmpeg(cmd, label="create_vertical")
 
 
 def create_tracked_vertical(
@@ -1579,7 +1621,7 @@ def create_tracked_vertical(
         *audio_encode_args(quality_preset),
         str(output_path),
     ]
-    return subprocess.run(cmd, capture_output=True).returncode == 0
+    return _run_ffmpeg(cmd, label="tracked_vertical")
 
 
 LAYOUT_MODES = ("regular", "webinar", "podcast", "sales")

@@ -18,7 +18,7 @@ configure_stdio()
 def probe(path: Path, entry: str) -> str | None:
     cmd = ["ffprobe", "-v", "error", "-show_entries", entry, "-of", "default=noprint_wrappers=1:nokey=1", str(path)]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode == 0:
             return result.stdout.strip()
     except Exception:

@@ -1,13 +1,31 @@
+"""Playwright codegen reference — YouTube Studio publish flow (dev artifact).
+
+Recorded once for selector research. Not used by the pipeline; real publishing
+goes through `publish_youtube.py` / `youtube_client.py`. Paths and channel ID
+are scrubbed; provide your own via env before replaying.
+"""
+
 import asyncio
+import os
 import re
+from pathlib import Path
+
 from playwright.async_api import Playwright, async_playwright, expect
+
+PLUGIN_ROOT = Path(__file__).resolve().parents[2]
+STORAGE_STATE = os.getenv(
+    "VIDEOSHORTS_YOUTUBE_STORAGE",
+    str(PLUGIN_ROOT / "videoshorts-memory" / "secrets" / "youtube_storage_state.json"),
+)
+CHANNEL_ID = os.getenv("VIDEOSHORTS_YOUTUBE_CHANNEL_ID", "UCxxxxxxxxxxxxxxxx")
+STUDIO_URL = f"https://studio.youtube.com/channel/{CHANNEL_ID}"
 
 
 async def run(playwright: Playwright) -> None:
     browser = await playwright.chromium.launch(headless=False)
-    context = await browser.new_context(locale="ru-RU", storage_state="C:\\Users\\mrrut\\.cursor\\plugins\\local\\hyperion\\videoshorts-memory\\secrets\\youtube_storage_state.json", timezone_id="Europe/Moscow", viewport={"width":1440,"height":1000})
+    context = await browser.new_context(locale="ru-RU", storage_state=STORAGE_STATE, timezone_id="Europe/Moscow", viewport={"width":1440,"height":1000})
     page = await context.new_page()
-    await page.goto("https://studio.youtube.com/channel/UCQ2_R6IaR6FvJpvqLaNqu6w")
+    await page.goto(STUDIO_URL)
     await page.get_by_role("button", name="Создать", exact=True).click()
     await page.get_by_text("Добавить видео").click()
     await page.get_by_role("button", name="Выбрать файлы").click()
@@ -54,7 +72,7 @@ async def run(playwright: Playwright) -> None:
     await page.get_by_text("Shorts", exact=True).click()
 
     # ---------------------
-    await context.storage_state(path="C:\\Users\\mrrut\\.cursor\\plugins\\local\\hyperion\\videoshorts-memory\\secrets\\youtube_storage_state.json")
+    await context.storage_state(path=STORAGE_STATE)
     await context.close()
     await browser.close()
 

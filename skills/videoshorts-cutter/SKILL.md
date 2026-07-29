@@ -18,7 +18,16 @@ description: Рендер 9:16 (regular / webinar / podcast tracking / sales) + 
 ## Действия
 
 1. Прочитать pitfalls. Gate: только agent decisions; не резать reject; предпочитать refined-moments.
-2. Cut — **обязательно** передать `--layout` из brief:
+2. **Editorial-bundle gate (обязательно перед cut):** сверка moments/scores/editor/virality/refined/decisions/montage как единого бандла:
+
+```bash
+cd scripts
+python validate_agent_artifacts.py editorial-bundle "../videoshorts-memory/moments"
+```
+
+Если exit ≠ 0 — **не резать**, вернуться к boundary-refiner с ошибками валидатора.
+
+3. Cut — **обязательно** передать `--layout` из brief:
 
 ```bash
 cd scripts
@@ -33,7 +42,7 @@ python cut_clips.py "<video_path>" "../videoshorts-memory/moments/refined-moment
 
 Подставьте `layout` из `00-brief.md` (`layout: ...`). Не хардкодьте webinar, если в brief `regular` / `podcast` / `sales`.
 
-3. Сразу после успешного cut — audio polish (механика-скрипт ок):
+4. Сразу после успешного cut — audio polish (механика-скрипт ок):
 
 ```bash
 cd scripts
@@ -42,7 +51,7 @@ python audio_polish.py "../videoshorts-memory/output/clips/<stem>" --apply-loudn
 
 Пишет `audio-metrics.json` + `audio-polish-manifest.json` в clips dir. Если brief `loudnorm: false` — только metrics (`--no-apply-loudnorm`).
 
-4. Layouts:
+5. Layouts:
    - `regular` / `sales` — один кадр 9:16, кроп по лицу
    - `webinar` — dual-screen 30/70 (экран / лицо)
    - `podcast` — tracking-камера по лицу

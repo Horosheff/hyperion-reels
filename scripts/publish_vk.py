@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import json_store
 from videoshorts_core import configure_stdio
 
 configure_stdio()
@@ -41,18 +42,12 @@ def _load_local_env(root: Path) -> dict[str, str]:
 
 
 def _read_json(path: Path) -> dict:
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    data = json_store.read_json(path)
+    return data if isinstance(data, dict) else {}
 
 
 def _write_json(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_store.write_json(path, data)
 
 
 def resolve_config(plugin_root: Path = PLUGIN_ROOT) -> dict:
@@ -222,6 +217,13 @@ def _clip_payload(clips_dir: Path, index: int) -> dict:
     return base
 
 
+def _client_timeout() -> int:
+    try:
+        return max(120, int(os.getenv("VIDEOSHORTS_PUBLISH_CLIENT_TIMEOUT", "900")))
+    except ValueError:
+        return 900
+
+
 def run_vk_client(cfg: dict, args: list[str], *, log_path: Path | None = None) -> dict:
     client = Path(cfg["client"])
     if not client.is_file():
@@ -231,15 +233,28 @@ def run_vk_client(cfg: dict, args: list[str], *, log_path: Path | None = None) -
         }
     cmd = [sys.executable, str(client), *args]
     started = datetime.now(timezone.utc).isoformat()
-    result = subprocess.run(
-        cmd,
-        cwd=str(cfg["cwd"]),
-        env=build_env(cfg),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(cfg["cwd"]),
+            env=build_env(cfg),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_client_timeout(),
+        )
+    except subprocess.TimeoutExpired:
+        payload = {
+            "ok": False,
+            "error": f"timeout {_client_timeout()}с (env VIDEOSHORTS_PUBLISH_CLIENT_TIMEOUT)",
+            "started_at": started,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "cmd": cmd[1:],
+        }
+        if log_path is not None:
+            _write_json(log_path, payload)
+        return payload
     payload = {
         "ok": result.returncode == 0,
         "returncode": result.returncode,
@@ -386,19 +401,25 @@ def main() -> None:
     _write_json(log_path, result)
 
     queue_path = clips_dir / "publish-queue.json"
-    queue = _read_json(queue_path)
-    for entry in queue.get("items") or []:
-        if isinstance(entry, dict) and int(entry.get("index", -1)) == args.index:
-            platforms = entry.setdefault("platforms", {})
-            vk = platforms.setdefault("vk", {"adapter": "playwright:vk", "payload": {}})
-            vk["status"] = (
-                "published" if result["ok"] and not args.draft else ("draft" if result["ok"] else "failed")
-            )
-            vk["updated_at"] = datetime.now(timezone.utc).isoformat()
-            vk["log"] = str(log_path.resolve())
-            break
-    if queue:
-        _write_json(queue_path, queue)
+
+    def _mark_published(queue: dict) -> dict:
+        for entry in queue.get("items") or []:
+            if isinstance(entry, dict) and int(entry.get("index", -1)) == args.index:
+                platforms = entry.setdefault("platforms", {})
+                vk = platforms.setdefault("vk", {"adapter": "playwright:vk", "payload": {}})
+                vk["status"] = (
+                    "published" if result["ok"] and not args.draft else ("draft" if result["ok"] else "failed")
+                )
+                vk["updated_at"] = datetime.now(timezone.utc).isoformat()
+                vk["log"] = str(log_path.resolve())
+                break
+        return queue
+
+    if queue_path.is_file():
+        try:
+            json_store.update_json(queue_path, _mark_published)
+        except Exception as exc:
+            print(f"[WARN] publish-queue update: {exc}", file=sys.stderr)
 
     if result["ok"]:
         print("✅ VK Video:", "черновик" if args.draft else "опубликовано")

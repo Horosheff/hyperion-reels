@@ -46,7 +46,7 @@ def probe_duration(path: Path) -> float | None:
         str(path),
     ]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if r.returncode == 0:
             return float(r.stdout.strip())
     except Exception:
@@ -63,7 +63,7 @@ def probe_resolution(path: Path) -> tuple[int, int] | None:
         str(path),
     ]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if r.returncode == 0 and "x" in r.stdout:
             w, h = r.stdout.strip().split("x")
             return int(w), int(h)
@@ -81,7 +81,7 @@ def probe_audio(path: Path) -> bool:
         str(path),
     ]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         return r.returncode == 0 and "audio" in r.stdout
     except Exception:
         return False

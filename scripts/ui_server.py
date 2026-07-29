@@ -27,6 +27,7 @@ SCRIPTS_DIR = PLUGIN_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+import json_store
 from profile_system import PROFILE_PATH, build_profile
 
 try:
@@ -48,6 +49,24 @@ RUN_REQUEST_PATH = MEMORY_ROOT / "run-request.json"
 RUN_STATUS_PATH = OUTPUT_DIR / "run-status.json"
 LATEST_RESULTS_PATH = OUTPUT_DIR / "latest-results.json"
 DEFAULT_RUN_MODE = "agent"
+
+# Subprocess timeouts (seconds), overridable via env.
+PUBLISH_TIMEOUT = int(os.getenv("VIDEOSHORTS_PUBLISH_TIMEOUT", "900"))
+LOGIN_TIMEOUT = int(os.getenv("VIDEOSHORTS_LOGIN_TIMEOUT", "600"))
+COVERS_TIMEOUT = int(os.getenv("VIDEOSHORTS_COVERS_TIMEOUT", "1800"))
+QUEUE_TIMEOUT = int(os.getenv("VIDEOSHORTS_QUEUE_TIMEOUT", "600"))
+
+# Paths that must never be served over HTTP (secrets, env, git internals).
+SERVE_DENY_SUBSTRINGS = (
+    "videoshorts.local.env",
+    f"secrets{os.sep}",
+    f"{os.sep}secrets",
+    f".git{os.sep}",
+    f"{os.sep}.git",
+    f"agent-transcripts{os.sep}",
+)
+
+_LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1", "[::1]"}
 AGENT_CHAIN = [
     "videoshorts-system-profiler",
     "videoshorts-intake",
@@ -185,13 +204,52 @@ def parse_bool(value: object, default: bool = False) -> bool:
     return str(value).lower() in {"1", "true", "yes", "on", "да"}
 
 
-def read_latest_results() -> dict | None:
-    if not LATEST_RESULTS_PATH.is_file():
-        return None
+def _is_relative_to(path: Path, root: Path) -> bool:
     try:
-        return json.loads(LATEST_RESULTS_PATH.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError):
-        return None
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def origin_host_allowed(origin: str) -> bool:
+    """True when Origin/Referer belongs to a local loopback host (any port)."""
+    if not origin:
+        return True
+    try:
+        host = (urlparse(origin).hostname or "").lower()
+    except ValueError:
+        return False
+    return host in _LOCAL_HOSTNAMES
+
+
+def request_origin_allowed(handler: BaseHTTPRequestHandler) -> bool:
+    """Same-origin CSRF gate: missing Origin (curl, agents) is allowed;
+    a browser-supplied Origin/Referer must point at localhost."""
+
+    origin = handler.headers.get("Origin") or handler.headers.get("Referer") or ""
+    return origin_host_allowed(origin)
+
+
+def cors_origin_for(handler: BaseHTTPRequestHandler) -> str | None:
+    origin = handler.headers.get("Origin") or ""
+    if origin and origin_host_allowed(origin):
+        return origin
+    return None
+
+
+def _serve_denied(resolved: Path) -> bool:
+    normalized = str(resolved)
+    lowered = normalized.lower()
+    for marker in SERVE_DENY_SUBSTRINGS:
+        if marker.lower() in lowered:
+            return True
+    return lowered.endswith(".env") or ".env." in lowered
+
+
+def read_latest_results() -> dict | None:
+    data = json_store.read_json(LATEST_RESULTS_PATH, default=None)
+    return data if isinstance(data, dict) else None
 
 
 def merge_status_with_results(status: dict) -> dict:
@@ -218,20 +276,20 @@ def reset_to_waiting_for_upload(reason: str = "new_ui_session") -> dict:
         "reason": reason,
         "message": "Откройте UI, выберите новый файл и нажмите OK — передать Cursor Director.",
     }
-    RUN_STATUS_PATH.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
-    BRIEF_PATH.write_text(
+    json_store.write_json(RUN_STATUS_PATH, status)
+    json_store.write_text_atomic(
+        BRIEF_PATH,
         "# VideoShorts brief\n\n"
         f"created_at: {status['created_at']}\n"
         "status: WAITING_FOR_UPLOAD\n"
         "video_path: (not selected)\n",
-        encoding="utf-8",
     )
     HANDOFF_PATH.parent.mkdir(parents=True, exist_ok=True)
-    HANDOFF_PATH.write_text(
+    json_store.write_text_atomic(
+        HANDOFF_PATH,
         "# VideoShorts — новая сессия\n\n"
         "status: WAITING_FOR_UPLOAD\n"
         "director_action: ждать новый READY_FOR_AGENT из UI, не использовать старые run-request/latest-results\n",
-        encoding="utf-8",
     )
     return status
 
@@ -241,7 +299,11 @@ def json_response(handler: BaseHTTPRequestHandler, payload: dict, status: int = 
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
-    handler.send_header("Access-Control-Allow-Origin", "*")
+    origin = cors_origin_for(handler)
+    if origin:
+        handler.send_header("Access-Control-Allow-Origin", origin)
+        handler.send_header("Vary", "Origin")
+    handler.send_header("X-Content-Type-Options", "nosniff")
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -352,7 +414,7 @@ def write_brief(video_path: Path, settings: dict, command: list[str], log_path: 
         subprocess.list2cmdline(command),
         "",
     ]
-    BRIEF_PATH.write_text("\n".join(lines), encoding="utf-8")
+    json_store.write_text_atomic(BRIEF_PATH, "\n".join(lines))
     HANDOFF_PATH.parent.mkdir(parents=True, exist_ok=True)
     if run_mode == "agent":
         handoff_status = "READY_FOR_AGENT"
@@ -360,7 +422,8 @@ def write_brief(video_path: Path, settings: dict, command: list[str], log_path: 
     else:
         handoff_status = status
         director_action = "локальная диагностика без Cursor subagents"
-    HANDOFF_PATH.write_text(
+    json_store.write_text_atomic(
+        HANDOFF_PATH,
         "# VideoShorts — новая сессия\n\n"
         f"status: {handoff_status}\n"
         "brief: videoshorts-memory/00-brief.md\n"
@@ -384,7 +447,7 @@ def prepare_agent_request(video_path: Path, settings: dict) -> dict:
             "Запустите python scripts/ensure_dependencies.py --install или bootstrap-videoshorts.ps1"
         )
     PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PROFILE_PATH.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_store.write_json(PROFILE_PATH, profile)
     settings = {**settings, "system_profile": profile}
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -407,7 +470,7 @@ def prepare_agent_request(video_path: Path, settings: dict) -> dict:
         "brief_path": str(BRIEF_PATH),
         "handoff_path": str(HANDOFF_PATH),
     }
-    RUN_REQUEST_PATH.write_text(json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_store.write_json(RUN_REQUEST_PATH, request)
 
     status = {
         "status": "READY_FOR_AGENT",
@@ -422,14 +485,14 @@ def prepare_agent_request(video_path: Path, settings: dict) -> dict:
         "latest_results_path": str(OUTPUT_DIR / "latest-results.json"),
         "message": "Передано в Cursor Director. Ожидается запуск Task-цепочки VideoShorts.",
     }
-    RUN_STATUS_PATH.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_store.write_json(RUN_STATUS_PATH, status)
     return status
 
 
 def start_local_pipeline(video_path: Path, settings: dict) -> dict:
     profile = build_profile()
     PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PROFILE_PATH.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_store.write_json(PROFILE_PATH, profile)
     settings = {**settings, "system_profile": profile}
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -449,7 +512,7 @@ def start_local_pipeline(video_path: Path, settings: dict) -> dict:
         "status_path": str(RUN_STATUS_PATH),
         "note": "Диагностический backend-режим без Cursor subagents.",
     }
-    RUN_REQUEST_PATH.write_text(json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_store.write_json(RUN_REQUEST_PATH, request)
 
     runner_command = [
         sys.executable,
@@ -489,7 +552,7 @@ def start_local_pipeline(video_path: Path, settings: dict) -> dict:
         "brief_path": str(BRIEF_PATH),
         "latest_results_path": str(OUTPUT_DIR / "latest-results.json"),
     }
-    RUN_STATUS_PATH.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_store.write_json(RUN_STATUS_PATH, status)
     return status
 
 
@@ -532,7 +595,9 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_file(UI_DIR / "videoshorts-results.html", "text/html; charset=utf-8")
             return
         if path == "/api/status":
-            data = json.loads(RUN_STATUS_PATH.read_text(encoding="utf-8-sig")) if RUN_STATUS_PATH.is_file() else {"status": "IDLE"}
+            data = json_store.read_json(RUN_STATUS_PATH, default={"status": "IDLE"})
+            if not isinstance(data, dict):
+                data = {"status": "IDLE"}
             json_response(self, merge_status_with_results(data))
             return
         if path == "/api/config":
@@ -550,6 +615,9 @@ class Handler(BaseHTTPRequestHandler):
             })
             return
         if path == "/api/new-session":
+            if not request_origin_allowed(self):
+                json_response(self, {"ok": False, "error": "forbidden origin"}, status=403)
+                return
             json_response(self, reset_to_waiting_for_upload("new_ui_session"))
             return
         if path == "/api/latest-results":
@@ -577,7 +645,7 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self, {"ok": True, "status": "idle", "pct": 0, "message": "Ожидание…"})
                 return
             try:
-                data = json.loads(progress_path.read_text(encoding="utf-8-sig"))
+                data = json_store.read_json(progress_path)
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
                 return
@@ -657,7 +725,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 profile = build_profile()
                 PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-                PROFILE_PATH.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
+                json_store.write_json(PROFILE_PATH, profile)
                 json_response(self, {"ok": True, "profile_path": str(PROFILE_PATH), **profile})
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
@@ -673,17 +741,57 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
         if path.startswith("/ui/"):
-            self.serve_file(UI_DIR / path.removeprefix("/ui/"), self.guess_content_type(path))
+            relative = path.removeprefix("/ui/")
+            if not relative or relative.startswith("/") or ".." in Path(relative).parts:
+                self.send_error(404)
+                return
+            self.serve_file(UI_DIR / relative, self.guess_content_type(relative))
             return
         self.send_error(404)
 
+    def _read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length else b"{}"
+        return json.loads(raw.decode("utf-8") or "{}")
+
+    @staticmethod
+    def _resolve_clips_dir(raw_value: object) -> Path | None:
+        if not raw_value:
+            return None
+        clips_dir = Path(str(raw_value)).expanduser()
+        if not clips_dir.is_dir():
+            return None
+        resolved = clips_dir.resolve()
+        if not _is_relative_to(resolved, PLUGIN_ROOT):
+            return None
+        return resolved
+
+    def _run_subprocess(self, cmd: list[str], *, timeout: int, env: dict | None = None) -> subprocess.CompletedProcess:
+        try:
+            return subprocess.run(
+                cmd,
+                cwd=str(SCRIPTS_DIR),
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise TimeoutError(
+                f"Таймаут {timeout}с: {' '.join(str(c) for c in cmd[:3])}… "
+                f"(увеличьте через env VIDEOSHORTS_*_TIMEOUT)"
+            ) from exc
+
     def do_POST(self) -> None:
+        if not request_origin_allowed(self):
+            json_response(self, {"ok": False, "error": "forbidden origin"}, status=403)
+            return
         path = unquote(urlparse(self.path).path)
         if path == "/api/prepare-publish":
             try:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                raw = self.rfile.read(length) if length else b"{}"
-                payload = json.loads(raw.decode("utf-8") or "{}")
+                payload = self._read_json_body()
                 clips_dir = Path(str(payload.get("clips_dir") or "")).expanduser()
                 selected = payload.get("selected") or []
                 if not clips_dir.is_dir():
@@ -691,10 +799,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 # Security: only inside plugin root
                 resolved = clips_dir.resolve()
-                root = PLUGIN_ROOT.resolve()
-                try:
-                    resolved.relative_to(root)
-                except ValueError:
+                if not _is_relative_to(resolved, PLUGIN_ROOT):
                     json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
                     return
                 if str(SCRIPTS_DIR) not in sys.path:
@@ -711,11 +816,8 @@ class Handler(BaseHTTPRequestHandler):
                     "pct": 2,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
-                (resolved / "covers-progress.json").write_text(
-                    json.dumps(progress_seed, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                covers = subprocess.run(
+                json_store.write_json(resolved / "covers-progress.json", progress_seed)
+                covers = self._run_subprocess(
                     [
                         sys.executable,
                         str(SCRIPTS_DIR / "prepare_covers.py"),
@@ -724,28 +826,20 @@ class Handler(BaseHTTPRequestHandler):
                         "kie",
                         "--force-upload",
                     ],
-                    cwd=str(SCRIPTS_DIR),
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
+                    timeout=COVERS_TIMEOUT,
                 )
-                queue = subprocess.run(
+                queue = self._run_subprocess(
                     [sys.executable, str(SCRIPTS_DIR / "prepare_publish_queue.py"), str(resolved)],
-                    cwd=str(SCRIPTS_DIR),
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
+                    timeout=QUEUE_TIMEOUT,
                 )
                 queue_path = resolved / "publish-queue.json"
                 covers_manifest_path = resolved / "covers-manifest.json"
                 queue_data = {}
                 covers_manifest = {}
                 if queue_path.is_file():
-                    queue_data = json.loads(queue_path.read_text(encoding="utf-8-sig"))
+                    queue_data = json_store.read_json(queue_path)
                 if covers_manifest_path.is_file():
-                    covers_manifest = json.loads(covers_manifest_path.read_text(encoding="utf-8-sig"))
+                    covers_manifest = json_store.read_json(covers_manifest_path)
                 ok = covers.returncode == 0 and queue.returncode == 0
                 if ok:
                     write_latest_results(resolved, status="PASS")
@@ -772,34 +866,25 @@ class Handler(BaseHTTPRequestHandler):
                     "queue_stdout": queue.stdout,
                     "error": None if ok else (covers.stderr or queue.stderr or covers.stdout or queue.stdout or "prepare failed"),
                 }, status=200 if ok else 500)
+            except TimeoutError as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=504)
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
         if path == "/api/dzen-login":
             try:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                raw = self.rfile.read(length) if length else b"{}"
-                payload = json.loads(raw.decode("utf-8") or "{}")
+                payload = self._read_json_body()
                 clips_dir = Path(str(payload.get("clips_dir") or "")).expanduser() if payload.get("clips_dir") else None
                 resolved = None
                 if clips_dir and clips_dir.is_dir():
                     resolved = clips_dir.resolve()
-                    try:
-                        resolved.relative_to(PLUGIN_ROOT.resolve())
-                    except ValueError:
+                    if not _is_relative_to(resolved, PLUGIN_ROOT):
                         json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
                         return
                 cmd = [sys.executable, str(SCRIPTS_DIR / "publish_dzen.py"), "--login-only"]
                 if resolved is not None:
                     cmd.insert(2, str(resolved))
-                proc = subprocess.run(
-                    cmd,
-                    cwd=str(SCRIPTS_DIR),
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                )
+                proc = self._run_subprocess(cmd, timeout=LOGIN_TIMEOUT)
                 if str(SCRIPTS_DIR) not in sys.path:
                     sys.path.insert(0, str(SCRIPTS_DIR))
                 from publish_dzen import status_payload
@@ -811,21 +896,19 @@ class Handler(BaseHTTPRequestHandler):
                     "error": None if proc.returncode == 0 else (proc.stderr or proc.stdout or "dzen login failed"),
                     **status,
                 }, status=200 if proc.returncode == 0 else 500)
+            except TimeoutError as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=504)
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
         if path in {"/api/vk-login", "/api/rutube-login", "/api/tiktok-login", "/api/instagram-login", "/api/youtube-login"}:
             try:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                raw = self.rfile.read(length) if length else b"{}"
-                payload = json.loads(raw.decode("utf-8") or "{}")
+                payload = self._read_json_body()
                 clips_dir = Path(str(payload.get("clips_dir") or "")).expanduser() if payload.get("clips_dir") else None
                 resolved = None
                 if clips_dir and clips_dir.is_dir():
                     resolved = clips_dir.resolve()
-                    try:
-                        resolved.relative_to(PLUGIN_ROOT.resolve())
-                    except ValueError:
+                    if not _is_relative_to(resolved, PLUGIN_ROOT):
                         json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
                         return
                 script_map = {
@@ -847,14 +930,7 @@ class Handler(BaseHTTPRequestHandler):
                 cmd = [sys.executable, str(SCRIPTS_DIR / script), "--login-only"]
                 if resolved is not None:
                     cmd.insert(2, str(resolved))
-                proc = subprocess.run(
-                    cmd,
-                    cwd=str(SCRIPTS_DIR),
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                )
+                proc = self._run_subprocess(cmd, timeout=LOGIN_TIMEOUT)
                 if str(SCRIPTS_DIR) not in sys.path:
                     sys.path.insert(0, str(SCRIPTS_DIR))
                 status: dict = {"ok": proc.returncode == 0}
@@ -890,14 +966,14 @@ class Handler(BaseHTTPRequestHandler):
                     "error": None if proc.returncode == 0 else (proc.stderr or proc.stdout or f"{label} login failed"),
                     **status,
                 }, status=200 if proc.returncode == 0 else 500)
+            except TimeoutError as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=504)
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
         if path == "/api/publish-dzen":
             try:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                raw = self.rfile.read(length) if length else b"{}"
-                payload = json.loads(raw.decode("utf-8") or "{}")
+                payload = self._read_json_body()
                 clips_dir = Path(str(payload.get("clips_dir") or "")).expanduser()
                 index = payload.get("index")
                 draft = bool(payload.get("draft"))
@@ -905,9 +981,7 @@ class Handler(BaseHTTPRequestHandler):
                     json_response(self, {"ok": False, "error": f"clips_dir not found: {clips_dir}"}, status=400)
                     return
                 resolved = clips_dir.resolve()
-                try:
-                    resolved.relative_to(PLUGIN_ROOT.resolve())
-                except ValueError:
+                if not _is_relative_to(resolved, PLUGIN_ROOT):
                     json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
                     return
                 try:
@@ -924,21 +998,11 @@ class Handler(BaseHTTPRequestHandler):
                 ]
                 if draft:
                     cmd.append("--draft")
-                proc = subprocess.run(
-                    cmd,
-                    cwd=str(SCRIPTS_DIR),
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                )
+                proc = self._run_subprocess(cmd, timeout=PUBLISH_TIMEOUT)
                 log_path = resolved / "dzen-publish-log.json"
                 log_data = {}
                 if log_path.is_file():
-                    try:
-                        log_data = json.loads(log_path.read_text(encoding="utf-8-sig"))
-                    except Exception:
-                        log_data = {}
+                    log_data = json_store.read_json(log_path)
                 try:
                     from videoshorts_core import write_latest_results
                     if proc.returncode == 0:
@@ -956,6 +1020,8 @@ class Handler(BaseHTTPRequestHandler):
                     "stderr": proc.stderr,
                     "error": None if proc.returncode == 0 else (proc.stderr or proc.stdout or "dzen publish failed"),
                 }, status=200 if proc.returncode == 0 else 500)
+            except TimeoutError as exc:
+                json_response(self, {"ok": False, "error": str(exc)}, status=504)
             except Exception as exc:
                 json_response(self, {"ok": False, "error": str(exc)}, status=500)
             return
@@ -969,9 +1035,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/publish-platforms",
         }:
             try:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                raw = self.rfile.read(length) if length else b"{}"
-                payload = json.loads(raw.decode("utf-8") or "{}")
+                payload = self._read_json_body()
                 clips_dir = Path(str(payload.get("clips_dir") or "")).expanduser()
                 index = payload.get("index")
                 draft = bool(payload.get("draft"))
@@ -979,9 +1043,7 @@ class Handler(BaseHTTPRequestHandler):
                     json_response(self, {"ok": False, "error": f"clips_dir not found: {clips_dir}"}, status=400)
                     return
                 resolved = clips_dir.resolve()
-                try:
-                    resolved.relative_to(PLUGIN_ROOT.resolve())
-                except ValueError:
+                if not _is_relative_to(resolved, PLUGIN_ROOT):
                     json_response(self, {"ok": False, "error": "clips_dir outside project"}, status=400)
                     return
                 try:
@@ -1083,15 +1145,24 @@ class Handler(BaseHTTPRequestHandler):
                     child_env["VIDEOSHORTS_BROWSER_SLOT"] = str(slot)
                     # Каждый браузер чуть сдвинут — Instagram не прячется под Дзен/VK
                     child_env["VIDEOSHORTS_WINDOW_SLOT"] = str(slot)
-                    proc = subprocess.run(
-                        cmd,
-                        cwd=str(SCRIPTS_DIR),
-                        env=child_env,
-                        capture_output=True,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                    )
+                    try:
+                        proc = subprocess.run(
+                            cmd,
+                            cwd=str(SCRIPTS_DIR),
+                            env=child_env,
+                            capture_output=True,
+                            text=True,
+                            encoding="utf-8",
+                            errors="replace",
+                            timeout=PUBLISH_TIMEOUT,
+                        )
+                    except subprocess.TimeoutExpired:
+                        return {
+                            "platform": platform,
+                            "ok": False,
+                            "returncode": None,
+                            "error": f"timeout {PUBLISH_TIMEOUT}с (env VIDEOSHORTS_PUBLISH_TIMEOUT)",
+                        }
                     print(
                         f"[publish-platforms] DONE {platform} code={proc.returncode}",
                         flush=True,
@@ -1099,10 +1170,7 @@ class Handler(BaseHTTPRequestHandler):
                     log_path = resolved / log_by_platform[platform]
                     log_data = {}
                     if log_path.is_file():
-                        try:
-                            log_data = json.loads(log_path.read_text(encoding="utf-8-sig"))
-                        except Exception:
-                            log_data = {}
+                        log_data = json_store.read_json(log_path)
                     ok = proc.returncode == 0
                     return {
                         "platform": platform,
@@ -1195,7 +1263,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = cors_origin_for(self)
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -1207,13 +1278,14 @@ class Handler(BaseHTTPRequestHandler):
         started = False
         try:
             resolved = path.resolve()
-            if not str(resolved).startswith(str(PLUGIN_ROOT.resolve())) or not resolved.is_file():
+            if not _is_relative_to(resolved, UI_DIR) or not resolved.is_file() or _serve_denied(resolved):
                 self.send_error(404)
                 return
             body = resolved.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-Content-Type-Options", "nosniff")
             if content_type.startswith("text/html"):
                 self.send_header("Cache-Control", "no-store, max-age=0")
             self.end_headers()
@@ -1233,7 +1305,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             resolved = path.resolve()
             memory_root = MEMORY_ROOT.resolve()
-            if not str(resolved).startswith(str(memory_root)) or not resolved.is_file():
+            if not _is_relative_to(resolved, memory_root) or not resolved.is_file() or _serve_denied(resolved):
                 self.send_error(404)
                 return
 

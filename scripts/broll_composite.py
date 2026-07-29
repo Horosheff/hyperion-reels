@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from videoshorts_core import _run_ffmpeg
+
 from videoshorts_core import configure_stdio, find_ffmpeg
 
 configure_stdio()
@@ -61,8 +63,8 @@ def composite(clips_dir: Path, plan: dict, *, dry_run: bool = False) -> dict:
         elif dry_run:
             entry.update({"status": "DRY_RUN", "command": build_overlay_command(source, asset, output, start, duration)})
         else:
-            result = subprocess.run(build_overlay_command(source, asset, output, start, duration), capture_output=True)
-            if result.returncode == 0 and output.is_file() and output.stat().st_size > 0:
+            ok = _run_ffmpeg(build_overlay_command(source, asset, output, start, duration), label="broll_composite")
+            if ok and output.is_file() and output.stat().st_size > 0:
                 entry["status"] = "PASS"
             else:
                 entry.update({"status": "FAIL", "reason": "ffmpeg_composite_failed"})
