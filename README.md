@@ -42,6 +42,16 @@
 
 Система не режет «по таймеру». Субагенты понимают речь, выбирают законченные мысли в диапазоне `min–max` из UI (например 30–90 с), отбраковывают слабое, уточняют границы и только потом режут, субтитруют и упаковывают.
 
+### Что нового в 0.4.7
+
+| Возможность | Суть |
+|-------------|------|
+| **Логи в файл** | `scripts/vs_logging.py`: каждый ключевой скрипт пишет `videoshorts-memory/logs/<script>.log` (ротация 3×2 МБ), crash-traceback больше не теряется; `VIDEOSHORTS_LOG_LEVEL` / `VIDEOSHORTS_LOG_DIR` |
+| **Лимиты API платформ** | `validate metadata` отклоняет заведомо непроходящие поля: YouTube title 100 / description 5000 / tags 500, Instagram/TikTok caption 2200, Telegram caption 1024, VK/RuTube title 100 |
+| **Data-flow контракты** | `docs/DATA-FLOW.md`: входы/выходы каждого субагента, гейты, все env-ручки в одной таблице |
+| **P1-остатки** | Таймаут стадий `run_pipeline.py`, атомарная запись `pipeline-fix-queue.md` |
+| **Тесты** | 54 юнит-теста: json_store, UI security, лимиты метаданных, agent_gate, vs_logging |
+
 ### Что нового в 0.4.6
 
 | Возможность | Суть |

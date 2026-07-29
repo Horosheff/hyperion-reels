@@ -13,8 +13,11 @@ from pathlib import Path
 from kie_client import KieApiError, KieClient, load_api_key
 from publish_selection import load_selection
 from videoshorts_core import _run_ffmpeg, configure_stdio, find_ffmpeg
+import vs_logging
 
 configure_stdio()
+
+_log = vs_logging.get_logger("prepare_covers")
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BRAND_DIR = PLUGIN_ROOT / "videoshorts-memory" / "brand" / "covers"
@@ -624,4 +627,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    _log.info("start: %s", " ".join(sys.argv))
+    try:
+        main()
+        _log.info("done")
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            _log.error("exit code %s", exc.code)
+        raise
+    except Exception:
+        _log.exception("fatal error")
+        raise

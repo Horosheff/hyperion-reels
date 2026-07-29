@@ -48,4 +48,5 @@ Telegram: https://t.me/maya_pro
 
 - Роли субагентов: [`docs/AGENTS.md`](docs/AGENTS.md)
 - Архитектура: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- Data-flow контракты и env-ручки: [`docs/DATA-FLOW.md`](docs/DATA-FLOW.md)
 - Пайплайн: [`AGENT-PIPELINE.md`](AGENT-PIPELINE.md)

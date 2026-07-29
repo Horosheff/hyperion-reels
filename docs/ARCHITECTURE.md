@@ -32,6 +32,10 @@ flowchart TB
 
 ## Полный пайплайн
 
+Классическая полная цепочка (ниже). В **slim run** (по умолчанию из UI) роли объединены:
+оценки и отбраковка — у editor, границы + решения + монтажное ТЗ — у boundary-refiner.
+Актуальная slim-цепочка и входы/выходы каждого агента: [`docs/DATA-FLOW.md`](DATA-FLOW.md).
+
 ```mermaid
 flowchart TD
   A[1. System Profiler] --> B[2. Intake]
@@ -115,7 +119,19 @@ videoshorts-memory/
   output/clips/<stem>/clip_XX.mp4
   output/clips/<stem>-publish/
   output/latest-results.json
+  logs/<script>.log        # ротация 3x2 МБ, см. DATA-FLOW.md
 ```
+
+## Надёжность (слои защиты)
+
+| Слой | Механизм |
+|------|----------|
+| Записи общего состояния | `scripts/json_store.py` — атомарная запись + межпроцессный `.lock` |
+| Внешние процессы | Таймауты ffmpeg/Whisper/publish/логинов (env-ручки в DATA-FLOW.md) |
+| UI-сервер | Path confinement, denylist секретов, CORS/CSRF для локальных origin |
+| Гейты | `agent_gate` (clip-decisions) + `validate editorial-bundle` перед cutter |
+| Метаданные | Жёсткие лимиты API платформ в `validate metadata` |
+| Диагностика | Логи `videoshorts-memory/logs/`, инциденты в `pipeline-fix-queue.md` |
 
 ## Принцип качества
 

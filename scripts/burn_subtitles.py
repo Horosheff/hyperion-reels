@@ -16,8 +16,11 @@ from pathlib import Path
 
 from videoshorts_core import _run_ffmpeg, configure_stdio, find_ffmpeg
 from quality_presets import resolve_preset, video_encode_args
+import vs_logging
 
 configure_stdio()
+
+_log = vs_logging.get_logger("burn_subtitles")
 
 
 def _escape_filter_path(path: Path) -> str:
@@ -337,8 +340,15 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _log.info("start: %s", " ".join(sys.argv))
     try:
         main()
+        _log.info("done")
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            _log.error("exit code %s", exc.code)
+        raise
     except Exception:
+        _log.exception("fatal error")
         traceback.print_exc()
         sys.exit(1)

@@ -9,8 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from videoshorts_core import configure_stdio
+import vs_logging
 
 configure_stdio()
+
+_log = vs_logging.get_logger("publish_selection")
 
 DEFAULT_PLATFORMS = ["youtube", "instagram", "tiktok"]
 ALLOWED_PLATFORMS = {
@@ -115,4 +118,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    _log.info("start: %s", " ".join(sys.argv))
+    try:
+        main()
+        _log.info("done")
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            _log.error("exit code %s", exc.code)
+        raise
+    except Exception:
+        _log.exception("fatal error")
+        raise

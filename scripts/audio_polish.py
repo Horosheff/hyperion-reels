@@ -12,8 +12,11 @@ from pathlib import Path
 
 from quality_presets import LOUDNORM_I, LOUDNORM_LRA, LOUDNORM_TP, audio_encode_args, loudnorm_filter
 from videoshorts_core import configure_stdio, find_ffmpeg
+import vs_logging
 
 configure_stdio()
+
+_log = vs_logging.get_logger("audio_polish")
 
 
 def _run(cmd: list[str], timeout: int = 600) -> subprocess.CompletedProcess:
@@ -233,8 +236,15 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _log.info("start: %s", " ".join(sys.argv))
     try:
         main()
+        _log.info("done")
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            _log.error("exit code %s", exc.code)
+        raise
     except Exception:
+        _log.exception("fatal error")
         traceback.print_exc()
         sys.exit(1)

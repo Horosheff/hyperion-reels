@@ -28,6 +28,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import json_store
+import vs_logging
 from profile_system import PROFILE_PATH, build_profile
 
 try:
@@ -67,6 +68,9 @@ SERVE_DENY_SUBSTRINGS = (
 )
 
 _LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1", "[::1]"}
+
+_log = vs_logging.get_logger("ui_server")
+
 AGENT_CHAIN = [
     "videoshorts-system-profiler",
     "videoshorts-intake",
@@ -1374,6 +1378,7 @@ def main() -> None:
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}/"
+    _log.info("ui server start: %s", url)
     print(f"VideoShorts UI: {url}")
     print("Press Ctrl+C to stop.")
     if args.open:
@@ -1382,6 +1387,7 @@ def main() -> None:
     try:
         server.serve_forever()
     except KeyboardInterrupt:
+        _log.info("ui server stopped (KeyboardInterrupt)")
         pass
 
 

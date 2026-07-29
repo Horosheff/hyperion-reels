@@ -12,8 +12,11 @@ from pathlib import Path
 from videoshorts_core import configure_stdio, write_latest_results
 from agent_gate import agent_mode_enabled, evaluate_agent_decisions, evaluate_uniform_durations, gate_message
 import json_store
+import vs_logging
 
 configure_stdio()
+
+_log = vs_logging.get_logger("qa_clips")
 
 
 def append_open_incident(clips_dir: Path, issues: list[str]) -> Path:
@@ -296,4 +299,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    _log.info("start: %s", " ".join(sys.argv))
+    try:
+        main()
+        _log.info("done")
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            _log.error("exit code %s", exc.code)
+        raise
+    except Exception:
+        _log.exception("fatal error")
+        raise

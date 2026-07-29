@@ -12,8 +12,11 @@ from pathlib import Path
 from videoshorts_core import clips_from_json, configure_stdio, create_layout_clip, normalize_layout_mode
 from quality_presets import resolve_preset
 from agent_gate import agent_mode_enabled, evaluate_agent_decisions, gate_message
+import vs_logging
 
 configure_stdio()
+
+_log = vs_logging.get_logger("cut_clips")
 
 
 def main() -> None:
@@ -243,8 +246,15 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _log.info("start: %s", " ".join(sys.argv))
     try:
         main()
+        _log.info("done")
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            _log.error("exit code %s", exc.code)
+        raise
     except Exception:
+        _log.exception("fatal error")
         traceback.print_exc()
         sys.exit(1)

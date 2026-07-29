@@ -13,6 +13,10 @@ import traceback
 from pathlib import Path
 from typing import Any, List
 
+import vs_logging
+
+_log = vs_logging.get_logger("transcribe_worker")
+
 
 def _configure_stdio() -> None:
     if sys.platform != "win32":
@@ -185,10 +189,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _log.info("start: %s", " ".join(sys.argv))
     try:
         main()
     except SystemExit:
         raise
     except Exception:
+        _log.exception("fatal error")
         traceback.print_exc()
         sys.exit(1)
