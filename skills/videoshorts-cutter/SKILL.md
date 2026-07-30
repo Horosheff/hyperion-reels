@@ -51,6 +51,8 @@ python audio_polish.py "../videoshorts-memory/output/clips/<stem>" --apply-loudn
 
 Пишет `audio-metrics.json` + `audio-polish-manifest.json` в clips dir. Если brief `loudnorm: false` — только metrics (`--no-apply-loudnorm`).
 
+После loudnorm `audio_polish.py` сам меряет `volumedetect`. Если `max_volume > -1.0` dB → условный `alimiter` (ceiling ≈ TP=-1.5) и повторный measure. Не чинить clipping one-off руками на одном клипе.
+
 5. Layouts:
    - `regular` / `sales` — один кадр 9:16, кроп по лицу
    - `webinar` — dual-screen 30/70 (экран / лицо)

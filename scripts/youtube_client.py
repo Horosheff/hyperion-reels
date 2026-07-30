@@ -103,6 +103,8 @@ class YoutubeClient:
             "yes",
             "да",
         }
+        # Шаг «Подходит ли видео для рекламы» (self-certification): none / some / sensitive
+        self.ad_suitability = os.getenv("YOUTUBE_AD_SUITABILITY", "none").strip().lower()
         self.headless = os.getenv("HEADLESS", "false").lower() == "true"
         self.timeout = int(os.getenv("BROWSER_TIMEOUT", "180000"))
         force_close = os.getenv("VIDEOSHORTS_FORCE_CLOSE_BROWSER", "1").lower() not in {
@@ -1544,6 +1546,7 @@ class YoutubeClient:
                     pass
 
             await self._accept_checks_if_any()
+            await self._set_ad_suitability_if_needed()
             await self._dismiss_rating_prompt()
 
             nxt = self.page.get_by_role("button", name="Далее")
@@ -1558,8 +1561,9 @@ class YoutubeClient:
                         break
                 except Exception:
                     pass
-                # иногда блокирует непройденная оценка
+                # иногда блокирует непройденная оценка или шаг «Для рекламы»
                 await self._dismiss_rating_prompt()
+                await self._set_ad_suitability_if_needed()
                 await self.page.wait_for_timeout(2000)
             else:
                 await self.screenshot(f"error_next_disabled_{step}")
@@ -1640,6 +1644,75 @@ class YoutubeClient:
                     await self.page.wait_for_timeout(200)
             except Exception:
                 continue
+
+    async def _set_ad_suitability_if_needed(self) -> None:
+        """Шаг «Подходит ли видео для рекламы» (self-certification).
+
+        Раньше здесь не выбирался ответ → «Далее» оставался disabled, публикация висла.
+        Дефолт: «Ни один вариант не подходит» (none). Можно переопределить env
+        YOUTUBE_AD_SUITABILITY = some | sensitive.
+        """
+        assert self.page
+        marker = self.page.get_by_text(
+            re.compile(
+                r"Подходит ли видео для рекламы|"
+                r"Is the video suitable for advertising|"
+                r"Ad suitability|advertising guidelines",
+                re.I,
+            )
+        )
+        try:
+            if await marker.count() == 0 or not await marker.first.is_visible():
+                return
+        except Exception:
+            return
+        logger.info("Обнаружен шаг «Подходит ли видео для рекламы» — выбираю ответ")
+
+        groups = {
+            "none": re.compile(
+                r"Ни один вариант.*не подходит|"
+                r"None of the above|"
+                r"не относится|"
+                r"doesn.?t contain|"
+                r"No.*inappropriate content",
+                re.I,
+            ),
+            "some": re.compile(
+                r"Некоторые варианты подходят|"
+                r"Some of the above|"
+                r"contains some",
+                re.I,
+            ),
+            "sensitive": re.compile(
+                r"Видео содержит неприемлемый контент|"
+                r"Video contains inappropriate content|"
+                r"sensitive content",
+                re.I,
+            ),
+        }
+        chosen = groups.get(self.ad_suitability, groups["none"])
+        # Пробуем выбрать целевой ответ; fallback — «none»
+        for pattern in (chosen, groups["none"]):
+            try:
+                radio = self.page.get_by_role("radio", name=pattern)
+                if await radio.count() > 0:
+                    await self._hclick(radio.first, timeout=5000)
+                    logger.info("ad suitability: выбран вариант (%s)", pattern.pattern[:40])
+                    await self._hpause(0.3, 0.7)
+                    return
+            except Exception:
+                pass
+            # Некоторые варианты реализованы как обычная кнопка
+            try:
+                btn = self.page.get_by_role("button", name=pattern)
+                if await btn.count() > 0:
+                    await self._hclick(btn.first, timeout=5000)
+                    logger.info("ad suitability (button): выбран (%s)", pattern.pattern[:40])
+                    await self._hpause(0.3, 0.7)
+                    return
+            except Exception:
+                pass
+        logger.warning("ad suitability: вариант не найден — оставляю как есть")
 
     async def _set_not_for_kids_if_needed(self) -> None:
         assert self.page

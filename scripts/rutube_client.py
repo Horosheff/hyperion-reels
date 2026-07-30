@@ -939,7 +939,35 @@ class RutubeClient:
                 logger.error("Настройки пропали прямо перед Publish — стоп")
                 return False
 
-            await self._hclick(pub.first)
+            # Надёжный клик «Опубликовать»: обычный → force → JS.
+            # Ранее один human click иногда «не нажимался» (INC: не нажата кнопка публикации).
+            publish_clicked = False
+            try:
+                await self._hclick(pub.first, timeout=8000)
+                publish_clicked = True
+                logger.info("clicked publish (human click)")
+            except Exception as exc:
+                logger.warning("human publish click failed: %s — пробую force/JS", exc)
+                for attempt in range(2):
+                    try:
+                        await self._hclick(pub.first, timeout=5000, force=True)
+                        publish_clicked = True
+                        logger.info("clicked publish (force click %s)", attempt + 1)
+                        break
+                    except Exception as fexc:
+                        logger.warning("force publish click %s failed: %s", attempt + 1, fexc)
+                        try:
+                            await pub.first.evaluate("el => el.click()")
+                            publish_clicked = True
+                            logger.info("clicked publish (JS click %s)", attempt + 1)
+                            break
+                        except Exception as jexc:
+                            logger.warning("JS publish click %s failed: %s", attempt + 1, jexc)
+                            await self.page.wait_for_timeout(800)
+            if not publish_clicked:
+                await self.screenshot("error_publish_click")
+                logger.error("Не удалось кликнуть «Опубликовать» ни одним способом")
+                return False
             logger.info("clicked publish (after full upload+processing + settings check)")
 
         ok_after = await self._wait_after_publish()

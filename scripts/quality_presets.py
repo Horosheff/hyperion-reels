@@ -40,6 +40,8 @@ DEFAULT_PRESET = "release"
 LOUDNORM_I = -14.0
 LOUDNORM_TP = -1.5
 LOUDNORM_LRA = 11.0
+# Sample-peak gate after loudnorm (volumedetect); above → post alimiter
+CLIPPING_WARN_DB = -1.0
 
 FPS_CAP = 60.0  # источники >60 fps (slow-mo) приводим к 60
 
@@ -138,3 +140,14 @@ def loudnorm_filter(
             f"linear=true"
         )
     return f"loudnorm=I={i}:TP={tp}:LRA={lra}"
+
+
+def peak_limiter_filter(*, limit_db: float = LOUDNORM_TP) -> str:
+    """Truepeak-ish sample ceiling via alimiter (linear amplitude limit).
+
+    AAC re-encode after loudnorm can leave sample peaks above CLIPPING_WARN_DB
+    even when loudnorm TP=-1.5. Conditional second pass uses this filter.
+    """
+    limit = 10 ** (float(limit_db) / 20.0)
+    limit = max(0.0625, min(1.0, limit))
+    return f"alimiter=limit={limit:.6f}:attack=5:release=50:level=false"

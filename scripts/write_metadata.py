@@ -19,6 +19,9 @@ from videoshorts_core import clips_from_json, configure_stdio, segments_from_jso
 
 configure_stdio()
 
+# CTA-ссылка на Telegram-канал — подставляется в описание каждой платформы.
+TELEGRAM_CHANNEL_URL = "https://t.me/maya_pro"
+
 
 def _clean(text: str, limit: int | None = None) -> str:
     value = re.sub(r"\s+", " ", str(text or "")).strip()
@@ -224,11 +227,13 @@ def _platform_packs(title: str, description: str, tags: list[str], pinned: str, 
     ig_title = _phrase_aware_cut(title, 60)
     tt_title = _phrase_aware_cut(title, 70)
     seo_line = "Ключи: " + ", ".join(keywords[:5])
+    tg_line = f"Подробно в Telegram: {TELEGRAM_CHANNEL_URL}"
     yt_desc = "\n\n".join([
         description,
         "",
         "⏱ Смотри до конца — короткий разбор без воды.",
         seo_line,
+        tg_line,
         "",
         " ".join(tags),
     ])
@@ -237,17 +242,20 @@ def _platform_packs(title: str, description: str, tags: list[str], pinned: str, 
         description,
         "",
         "Сохрани, чтобы не потерять.",
+        tg_line,
         "",
         " ".join(tags[:12]),
     ])
     tt_desc = "\n".join([
         tt_title,
         _phrase_aware_cut(description.replace("\n\n", " "), 150),
+        tg_line,
         " ".join(tags[:8]),
     ])
     tg_caption = "\n\n".join([
         f"<b>{title}</b>",
         description,
+        tg_line,
         " ".join(tags[:6]),
     ])
     return {
@@ -290,10 +298,10 @@ def _platform_packs(title: str, description: str, tags: list[str], pinned: str, 
         "zen": {
             "platform": "zen",
             "title": yt_title[:80],
-            "description": _phrase_aware_cut(description.replace("\n\n", " "), 180),
+            "description": _phrase_aware_cut((description.replace("\n\n", " ") + " " + tg_line).strip(), 180),
             "hashtags": [str(t).lstrip("#") for t in tags[:5]],
             "seo_keywords": keywords[:8],
-            "copy_block": "\n".join([yt_title[:80], "", _phrase_aware_cut(description.replace("\n\n", " "), 180)]),
+            "copy_block": "\n".join([yt_title[:80], "", _phrase_aware_cut((description.replace("\n\n", " ") + " " + tg_line).strip(), 180)]),
         },
         "vk": {
             "platform": "vk",

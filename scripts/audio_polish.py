@@ -10,7 +10,15 @@ import sys
 import traceback
 from pathlib import Path
 
-from quality_presets import LOUDNORM_I, LOUDNORM_LRA, LOUDNORM_TP, audio_encode_args, loudnorm_filter
+from quality_presets import (
+    CLIPPING_WARN_DB,
+    LOUDNORM_I,
+    LOUDNORM_LRA,
+    LOUDNORM_TP,
+    audio_encode_args,
+    loudnorm_filter,
+    peak_limiter_filter,
+)
 from videoshorts_core import configure_stdio, find_ffmpeg
 import vs_logging
 
@@ -94,16 +102,15 @@ def safe_audio_status(metrics: dict, *, after_loudnorm: bool = False) -> tuple[s
     quiet_threshold = -28 if after_loudnorm else -24
     if mean_volume is not None and mean_volume < quiet_threshold:
         issues.append("audio_too_quiet")
-    if max_volume is not None and max_volume > -1.0:
+    if max_volume is not None and max_volume > CLIPPING_WARN_DB:
         issues.append("possible_clipping")
     return ("PASS" if not issues else "WARN", issues)
 
 
-def apply_loudnorm_inplace(src: Path, measured: dict | None = None, quality_preset: str = "release") -> bool:
-    """Rewrite video with two-pass loudnorm audio; video stream copied."""
+def _rewrite_audio_inplace(src: Path, af: str, quality_preset: str, tmp_suffix: str) -> bool:
+    """Copy video, re-encode audio with given -af filter chain."""
     ffmpeg = find_ffmpeg()
-    tmp = src.with_name(f"{src.stem}.loudnorm_tmp{src.suffix}")
-    af = loudnorm_filter(measured)
+    tmp = src.with_name(f"{src.stem}.{tmp_suffix}{src.suffix}")
     cmd = [
         ffmpeg, "-y", "-i", str(src),
         "-c:v", "copy",
@@ -117,6 +124,16 @@ def apply_loudnorm_inplace(src: Path, measured: dict | None = None, quality_pres
         return False
     tmp.replace(src)
     return True
+
+
+def apply_loudnorm_inplace(src: Path, measured: dict | None = None, quality_preset: str = "release") -> bool:
+    """Rewrite video with two-pass loudnorm audio; video stream copied."""
+    return _rewrite_audio_inplace(src, loudnorm_filter(measured), quality_preset, "loudnorm_tmp")
+
+
+def apply_peak_limiter_inplace(src: Path, quality_preset: str = "release") -> bool:
+    """Post-loudnorm alimiter when sample peak still exceeds CLIPPING_WARN_DB."""
+    return _rewrite_audio_inplace(src, peak_limiter_filter(), quality_preset, "limiter_tmp")
 
 
 def _candidate_clips(clips_dir: Path) -> list[Path]:
@@ -181,9 +198,25 @@ def main() -> None:
     for clip in clips:
         measured = loudnorm_measure(clip) if clip.stat().st_size > 0 else {}
         applied_ok = False
+        limiter_ok = False
+        limiter_trigger_db: float | None = None
         if apply and probe_audio_stream(clip).get("has_audio"):
             applied_ok = apply_loudnorm_inplace(clip, measured, quality_preset=args.quality_preset)
-            applied.append({"file": clip.name, "ok": applied_ok, "two_pass": bool(measured.get("input_i"))})
+            if applied_ok:
+                vd_after = volumedetect(clip)
+                maxv = vd_after.get("max_volume_db")
+                if maxv is not None and maxv > CLIPPING_WARN_DB:
+                    limiter_trigger_db = float(maxv)
+                    limiter_ok = apply_peak_limiter_inplace(clip, quality_preset=args.quality_preset)
+            applied.append(
+                {
+                    "file": clip.name,
+                    "ok": applied_ok,
+                    "two_pass": bool(measured.get("input_i")),
+                    "peak_limiter": limiter_ok,
+                    "peak_limiter_trigger_db": limiter_trigger_db,
+                }
+            )
 
         metric = {
             "file": clip.name,
@@ -191,11 +224,16 @@ def main() -> None:
             "volumedetect": volumedetect(clip),
             "loudnorm_first_pass": measured,
             "loudnorm_applied": applied_ok if apply else False,
+            "peak_limiter_applied": limiter_ok if apply else False,
+            "peak_limiter_trigger_db": limiter_trigger_db,
             "loudnorm_target": {"I": LOUDNORM_I, "TP": LOUDNORM_TP, "LRA": LOUDNORM_LRA},
         }
         status, issues = safe_audio_status(metric, after_loudnorm=bool(apply and applied_ok))
         if apply and not applied_ok and metric["stream"].get("has_audio"):
             issues.append("loudnorm_apply_failed")
+            status = "WARN"
+        if apply and limiter_trigger_db is not None and not limiter_ok:
+            issues.append("peak_limiter_apply_failed")
             status = "WARN"
         metric["status"] = status
         metric["issues"] = issues
@@ -212,6 +250,7 @@ def main() -> None:
             "pass": len(entries) - len(failed),
             "warn": len(failed),
             "loudnorm_applied": sum(1 for item in applied if item.get("ok")),
+            "peak_limiter_applied": sum(1 for item in applied if item.get("peak_limiter")),
         },
     }
     manifest = {
@@ -221,7 +260,11 @@ def main() -> None:
         "quality_preset": args.quality_preset,
         "applied": applied,
         "audio_metrics": args.metrics.name if args.metrics else "audio-metrics.json",
-        "note": "По умолчанию two-pass loudnorm применяется к cropped/final клипам (I=-14 LUFS).",
+        "note": (
+            "Two-pass loudnorm (I=-14 LUFS, TP=-1.5). "
+            f"If volumedetect max_volume > {CLIPPING_WARN_DB} dB after loudnorm, "
+            "apply alimiter (TP ceiling) and re-measure."
+        ),
     }
     metrics_path = args.metrics or (args.clips_dir / "audio-metrics.json")
     manifest_path = args.manifest or (args.clips_dir / "audio-polish-manifest.json")
@@ -231,7 +274,8 @@ def main() -> None:
     print(f"✅ Audio manifest: {manifest_path}")
     print(
         f"   status={payload['status']} pass={payload['summary']['pass']}/{payload['summary']['total']} "
-        f"loudnorm={payload['summary']['loudnorm_applied']}"
+        f"loudnorm={payload['summary']['loudnorm_applied']} "
+        f"limiter={payload['summary']['peak_limiter_applied']}"
     )
 
 

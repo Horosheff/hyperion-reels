@@ -1419,24 +1419,41 @@ class DzenClient:
             await self.page.wait_for_timeout(2000)
             
             # Заголовок + описание в contenteditable (без тегов — теги отдельным полем)
-            # Лимит Дзена на описание короткого ролика ~200 символов
-            full_description = (title or "").strip()
+            # Описание Дзена: вставляем ПОЛНЫЙ текст из metadata, а не обрезанный до 200.
+            # Ранее был жёсткий лимит ~200 → текст терялся (INC: текст не вставался полностью).
+            title_only = (title or "").strip()
+            full_description = title_only
             if description:
                 desc = description.strip()
                 # Не дублируем заголовок, если description уже начинается с него
-                if desc and desc != full_description:
-                    remaining = 200 - len(full_description) - 1
-                    if remaining > 20:
-                        full_description = f"{full_description}\n{desc[:remaining]}".strip()
-            
-            if len(full_description) > 200:
-                full_description = full_description[:197] + "..."
-            
+                if desc and desc != title_only:
+                    if title_only and not desc.lower().startswith(title_only.lower()[:40]):
+                        full_description = f"{title_only}\n{desc}".strip()
+                    else:
+                        full_description = desc.strip()
+
             # Поле описания - contenteditable div
             desc_field = self.page.locator('[contenteditable="true"]').first
             if await desc_field.count() > 0:
                 await self.hz.fill_fast_ok(desc_field, full_description)
                 logger.info(f"✓ Описание заполнено ({len(full_description)} симв.)")
+                # Верификация: contenteditable иногда теряет часть текста через fill
+                try:
+                    actual = (await desc_field.inner_text(timeout=3000) or "").strip()
+                    expected = full_description.strip()
+                    if expected and len(actual) < max(20, len(expected) // 2):
+                        logger.warning(
+                            "Описание вставлено не полностью (вставлено %s/%s) — повторная вставка",
+                            len(actual), len(expected),
+                        )
+                        await desc_field.click(timeout=3000)
+                        await self.page.wait_for_timeout(300)
+                        await desc_field.evaluate("(el, t) => { el.innerText = t; }", expected)
+                        await self.page.wait_for_timeout(400)
+                        actual2 = (await desc_field.inner_text(timeout=3000) or "").strip()
+                        logger.info("Повторная вставка описания: %s симв.", len(actual2))
+                except Exception as ve:
+                    logger.debug("Проверка описания не удалась (не критично): %s", ve)
             else:
                 # Альтернативные селекторы
                 await self._fill_field(

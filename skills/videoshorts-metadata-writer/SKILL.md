@@ -75,6 +75,7 @@ python validate_agent_artifacts.py metadata "../videoshorts-memory/output/clips/
 
 - Title phrase-aware, без `...`, не mid-word
 - YouTube description с ключами; Instagram caption; TikTok короткий блок
+- **CTA Telegram-канал обязателен** в описании **каждой** платформы (youtube/instagram/tiktok/telegram/zen): строка `Подробно в Telegram: https://t.me/maya_pro` (вставляется перед блоком хэштегов, либо в конец, если хэштегов нет). Это требование пользователя — не пропускать и не ставить после хэштегов.
 - Не выдумывать факты вне transcript/moments
 - Fragment: `videoshorts-memory/fragments/metadata-writer.md` + `incident_report`
 

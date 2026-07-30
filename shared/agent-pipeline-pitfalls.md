@@ -90,6 +90,8 @@
 
 - **FFmpeg not found:** установить и добавить в PATH.
 
+- **loudnorm → possible_clipping (max ≈ −0.9 dB):** two-pass loudnorm (TP=-1.5) + AAC иногда оставляет sample peak выше −1.0 dB. Не one-off hand-fix одного клипа. `audio_polish.py` после loudnorm меряет volumedetect; при `max_volume > -1.0` применяет `alimiter` (ceiling ≈ TP) и пересчитывает метрики. Soft WARN без limiter — исторический INC-20260730-2319.
+
 - **Post-burn effects сломали клип:** `--progress-bar` и `--zoom-punch` опциональны. Если эффект не применился, должен остаться базовый burned MP4.
 
 
