@@ -14,6 +14,7 @@ import sys
 import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -569,6 +570,65 @@ def _run_ffmpeg(cmd: list[str], *, label: str = "ffmpeg") -> bool:
         print(f"[ERROR] {label}: exit {proc.returncode}: {tail}", file=sys.stderr)
         return False
     return True
+
+
+_HDR_TRANSFERS = {"smpte2084", "arib-std-b67"}
+
+
+def _parse_fps(raw: str | None) -> float | None:
+    """'30000/1001' → 29.97; '60' → 60.0; мусор → None."""
+    if not raw:
+        return None
+    try:
+        if "/" in raw:
+            num, den = raw.split("/", 1)
+            den_value = float(den)
+            if den_value == 0:
+                return None
+            return float(num) / den_value
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def probe_video_info(video_path: Path) -> dict:
+    """fps + HDR-признак источника через ffprobe JSON (без падения при мусоре)."""
+    info: dict[str, object] = {"fps": None, "hdr": False, "color_transfer": None}
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=avg_frame_rate,r_frame_rate,color_transfer,color_space",
+                "-of", "json", str(video_path),
+            ],
+            capture_output=True, timeout=60, text=True,
+        )
+        if proc.returncode != 0:
+            return info
+        data = json.loads(proc.stdout or "{}")
+        stream = (data.get("streams") or [{}])[0]
+        fps = _parse_fps(stream.get("avg_frame_rate")) or _parse_fps(stream.get("r_frame_rate"))
+        transfer = str(stream.get("color_transfer") or "").lower()
+        space = str(stream.get("color_space") or "").lower()
+        info["fps"] = fps
+        info["color_transfer"] = transfer or None
+        info["hdr"] = transfer in _HDR_TRANSFERS or (space.startswith("bt2020") and bool(transfer))
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        pass
+    return info
+
+
+@lru_cache(maxsize=8)
+def _ffmpeg_has_filter(name: str) -> bool:
+    """Есть ли фильтр в сборке ffmpeg (zscale может отсутствовать без libzimg)."""
+    try:
+        proc = subprocess.run(
+            [find_ffmpeg(), "-hide_banner", "-filters"],
+            capture_output=True, timeout=30, text=True,
+        )
+        return f" {name} " in (proc.stdout or "")
+    except (subprocess.TimeoutExpired, OSError, RuntimeError):
+        return False
 
 
 def extract_audio(video_path: Path, output_path: Path) -> bool:
@@ -1241,6 +1301,24 @@ def _keep_segments(start: float, end: float, cut_intervals: list[tuple[float, fl
     return segments or [(start, end)]
 
 
+def _finishing_chain(input_path: Path) -> list[str]:
+    """Цвет (HDR→SDR при наличии zscale) → резкость → fps-cap для источника."""
+    from quality_presets import finishing_filters
+
+    info = probe_video_info(input_path)
+    hdr = bool(info.get("hdr")) and _ffmpeg_has_filter("zscale")
+    fps = info.get("fps") if isinstance(info.get("fps"), (int, float)) else None
+    return finishing_filters(hdr=hdr, fps=fps)
+
+
+def _append_finishing(chain: str, finishing: list[str]) -> str:
+    """Добавить finishing-фильтры в конец vf-цепочки."""
+    extra = [f for f in finishing if f]
+    if not extra:
+        return chain
+    return ",".join([chain, *extra])
+
+
 def create_webinar_split(
     input_path: Path,
     output_path: Path,
@@ -1289,7 +1367,7 @@ def create_webinar_split(
     bottom_h = output_height - top_h
 
     top_filter = (
-        f"scale={output_width}:{top_h}:force_original_aspect_ratio=decrease,"
+        f"scale={output_width}:{top_h}:force_original_aspect_ratio=decrease:flags=lanczos,"
         f"pad={output_width}:{top_h}:(ow-iw)/2:(oh-ih)/2:black"
     )
 
@@ -1320,14 +1398,17 @@ def create_webinar_split(
         crop_x = max(0, (input_w - crop_w) // 2)
         crop_y = max(0, (input_h - crop_h) // 2)
 
-    bottom_filter = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={output_width}:{bottom_h}"
+    bottom_filter = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={output_width}:{bottom_h}:flags=lanczos"
+    finishing = _finishing_chain(input_path)
+    finishing_suffix = "," + ",".join(finishing) if finishing else ""
     use_simple_trim = len(segments) == 1 and not cut_intervals
     if use_simple_trim:
         filter_complex = (
             f"split[top][bot];"
             f"[top]{top_filter}[t];"
             f"[bot]{bottom_filter}[b];"
-            f"[t][b]vstack=inputs=2[v]"
+            f"[t][b]vstack=inputs=2[vstk];"
+            f"[vstk]null{finishing_suffix}[v]"
         )
         audio_map = "0:a?"
     else:
@@ -1346,7 +1427,8 @@ def create_webinar_split(
                 f"asetpts=PTS-STARTPTS[a{idx}]"
             )
             concat_inputs.append(f"[v{idx}][a{idx}]")
-        parts.append("".join(concat_inputs) + f"concat=n={len(segments)}:v=1:a=1[v][a]")
+        parts.append("".join(concat_inputs) + f"concat=n={len(segments)}:v=1:a=1[vcat][a]")
+        parts.append(f"[vcat]null{finishing_suffix}[v]")
         filter_complex = ";".join(parts)
         audio_map = "[a]"
 
@@ -1506,8 +1588,9 @@ def create_face_vertical(
     )
     video_filter = (
         f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
-        f"scale={output_width}:{output_height}"
+        f"scale={output_width}:{output_height}:flags=lanczos"
     )
+    video_filter = _append_finishing(video_filter, _finishing_chain(input_path))
     use_simple_trim = len(segments) == 1 and not cut_intervals
     if use_simple_trim:
         filter_complex = f"[0:v]{video_filter}[v]"
@@ -1589,6 +1672,7 @@ def create_tracked_vertical(
             output_width, output_height, cut_intervals, quality_preset,
         )
 
+    finishing = _finishing_chain(input_path)
     parts: list[str] = []
     concat_inputs: list[str] = []
     for idx, (seg_start, seg_end, cx, cy) in enumerate(windows):
@@ -1596,7 +1680,8 @@ def create_tracked_vertical(
         crop_w, crop_h, crop_x, crop_y = _face_crop_box(
             input_w, input_h, fake_face, output_width, output_height, zoom=1.12
         )
-        vf = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={output_width}:{output_height}"
+        vf = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={output_width}:{output_height}:flags=lanczos"
+        vf = _append_finishing(vf, finishing)
         parts.append(
             f"[0:v]trim=start={seg_start:.3f}:end={seg_end:.3f},"
             f"setpts=PTS-STARTPTS,{vf}[v{idx}]"

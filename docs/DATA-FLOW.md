@@ -65,3 +65,12 @@ publish-selection → covers → publish-queue (атомарные записи 
 | `VIDEOSHORTS_QUEUE_TIMEOUT` | 600 с | запись publish-queue из UI |
 | `VIDEOSHORTS_PIPELINE_STEP_TIMEOUT` | 10800 с | стадия `run_pipeline.py` (legacy) |
 | `VIDEOSHORTS_AGENT_MODE` | — | `1/true/agent` — обязательные agent-решения |
+| `VIDEOSHORTS_SHARPEN` | 1 | `0` — отключить unsharp после даунскейла |
+| `VIDEOSHORTS_COLOR_GRADE` | 1 | `0` — отключить HDR→SDR тонемаппинг / SDR-грейд |
+
+## Видео-качество (Q1/Q2, рендер-слой)
+
+- **Резкость:** все `scale` — `flags=lanczos`, после кадрирования `unsharp=5:5:0.6`.
+- **Цвет:** HDR-источники (smpte2084 / arib-std-b67 / bt2020) проходят `zscale+tonemap=hable` → bt709; SDR получает лёгкий `eq=contrast=1.02:saturation=1.05`.
+- **Кодирование:** level 5.1, потолок битрейта release 12M/bufsize 24M, faststart.
+- **fps:** источники >60 fps (slow-mo) приводятся к 60; VFR не форсится.
