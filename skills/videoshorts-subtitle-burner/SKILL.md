@@ -27,6 +27,14 @@ python burn_subtitles.py ../videoshorts-memory/output/clips/<stem>/ `
 
 Quality presets: `release` (1080p) / `draft` (720p).
 
+## Hook SFX (pop-звук заставки)
+
+Если в ASS есть события стиля `HookKey` (hook-заставка), burner миксует pop-звук
+на каждое слово: sine 900 Гц / 90 мс с exp-затуханием, `adelay` по стаггеру
+`HOOK_WORD_STAGGER = 0.16` сек из `subtitle_engine.py`, `amix` поверх оригинала
+(аудио перекодируется в aac 192k вместо copy). Выключается `VIDEOSHORTS_HOOK_SFX=0`.
+Число слов считается по `\fscx150`-маркерам в событиях `HookKey` (`count_hook_words`).
+
 ## Windows
 
 ASS/SRT копируются во временный ASCII-путь перед burn (кириллица в path ломает `ass=` фильтр).

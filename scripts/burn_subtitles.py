@@ -17,6 +17,7 @@ from pathlib import Path
 from videoshorts_core import _run_ffmpeg, configure_stdio, find_ffmpeg
 from quality_presets import resolve_preset, video_encode_args
 from safe_zones import get_safe_zone, safe_zone_enabled, subtitle_min_margin_v, subtitle_side_margins
+from subtitle_engine import HOOK_WORD_STAGGER
 import vs_logging
 
 configure_stdio()
@@ -182,23 +183,78 @@ def build_subtitle_filter(
     return vf, temp_sub
 
 
+def hook_sfx_enabled() -> bool:
+    return os.environ.get("VIDEOSHORTS_HOOK_SFX", "1").strip().lower() not in {"0", "false", "off"}
+
+
+def count_hook_words(ass_path: Path) -> int:
+    """Слова hook-заставки в ASS (события стиля HookKey) — для синхронных pop SFX."""
+    if not ass_path.is_file() or ass_path.suffix.lower() != ".ass":
+        return 0
+    try:
+        count = 0
+        for line in ass_path.read_text(encoding="utf-8-sig").splitlines():
+            if line.startswith("Dialogue:") and ",HookKey," in line:
+                count += line.count(r"{\alpha&HFF&\fscx150")
+        return count
+    except Exception:
+        return 0
+
+
+def build_hook_sfx_filters(word_count: int) -> list[str]:
+    """Pop-звук на каждое слово заставки: sine-всплеск 900→500 Гц с эксп.
+    затуханием, adelay по стаггеру слов, поверх оригинальной дорожки."""
+    if word_count <= 0:
+        return []
+    pops: list[str] = []
+    for i in range(word_count):
+        delay_ms = int(i * HOOK_WORD_STAGGER * 1000)
+        pops.append(
+            f"sine=frequency=900:duration=0.09,"
+            f"volume=0.55,afade=t=out:st=0:d=0.085:curve=exp,"
+            f"aformat=sample_rates=48000:channel_layouts=stereo,"
+            f"adelay={delay_ms}|{delay_ms}[pop{i}]"
+        )
+    mix_inputs = (
+        "[0:a]aformat=sample_rates=48000:channel_layouts=stereo[a0];[a0]"
+        + "".join(f"[pop{i}]" for i in range(word_count))
+    )
+    return pops + [f"{mix_inputs}amix=inputs={word_count + 1}:duration=first:normalize=0[aout]"]
+
+
 def render_final_clip(
     input_mp4: Path,
     output_mp4: Path,
     video_filters: list[str],
     *,
     quality_preset: str = "release",
+    audio_filters: list[str] | None = None,
 ) -> bool:
-    """One encode pass for all video filters; audio copied from already-loudnorm source."""
+    """One encode pass for all video filters; audio copied from already-loudnorm source.
+
+    audio_filters (pop SFX заставки) требуют перекодирования звука —
+    тогда aac из пресета вместо copy.
+    """
     ffmpeg = find_ffmpeg()
     vf = ",".join(f for f in video_filters if f)
-    cmd = [
-        ffmpeg, "-y", "-i", str(input_mp4),
-        "-vf", vf,
-        *video_encode_args(quality_preset),
-        "-c:a", "copy",
-        str(output_mp4),
-    ]
+    if audio_filters:
+        filter_complex = f"[0:v]{vf}[vout];" + ";".join(audio_filters)
+        cmd = [
+            ffmpeg, "-y", "-i", str(input_mp4),
+            "-filter_complex", filter_complex,
+            "-map", "[vout]", "-map", "[aout]",
+            *video_encode_args(quality_preset),
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+            str(output_mp4),
+        ]
+    else:
+        cmd = [
+            ffmpeg, "-y", "-i", str(input_mp4),
+            "-vf", vf,
+            *video_encode_args(quality_preset),
+            "-c:a", "copy",
+            str(output_mp4),
+        ]
     result = _run_ffmpeg(cmd, label="render_final_clip")
     return result and output_mp4.is_file() and output_mp4.stat().st_size > 0
 
@@ -219,7 +275,13 @@ def burn_subtitles(
         video_width=video_width, video_height=video_height,
     )
     filters = [sub_vf, *(extra_filters or [])]
-    ok = render_final_clip(input_mp4, output_mp4, filters, quality_preset=quality_preset)
+    audio_filters = (
+        build_hook_sfx_filters(count_hook_words(sub_path)) if hook_sfx_enabled() else None
+    )
+    ok = render_final_clip(
+        input_mp4, output_mp4, filters,
+        quality_preset=quality_preset, audio_filters=audio_filters,
+    )
     if temp_sub and temp_sub.exists():
         temp_sub.unlink(missing_ok=True)
     return ok

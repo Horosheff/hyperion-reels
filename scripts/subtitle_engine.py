@@ -225,7 +225,8 @@ def generate_karaoke_line(
     return f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{text}"
 
 
-HOOK_KEY_COLOR = "#FFE500"  # жёлтая плашка ключевого слова (как «NEWS» на референсе)
+HOOK_KEY_COLOR = "#FFE500"  # жёлтая плашка слов заставки (как «NEWS» на референсе)
+HOOK_WORD_STAGGER = 0.16  # секунды между pop-in слов; burn_subtitles синхронизирует SFX
 
 
 def _hook_top_margin(video_height: int) -> int:
@@ -288,7 +289,7 @@ def generate_hook_event(
     hook_text: str,
     template: SubtitleTemplate,
     duration: float = 3.0,
-    word_stagger: float = 0.16,
+    word_stagger: float = HOOK_WORD_STAGGER,
     video_width: int = 720,
     video_height: int = 1280,
 ) -> list[str]:
@@ -298,7 +299,6 @@ def generate_hook_event(
     words = _hook_clean_words(hook_text)
     if not words:
         return []
-    key_idx = _hook_keyword_index(words)
     lines = _hook_wrap(words)
     hook_style_size = max(template.font_size + 10, int(template.font_size * 1.6))
     line_height = int(hook_style_size * 1.35)
@@ -318,16 +318,13 @@ def generate_hook_event(
                 f"\\t({t0},{t1},\\fscx118\\fscy118\\alpha&H00&)"
                 f"\\t({t1},{t2},\\fscx100\\fscy100)}}"
             )
-            if word_pos == key_idx:
-                parts.append(f"{{\\rHookKey}}{pop}{word}{{\\rHook}}")
-            else:
-                parts.append(f"{pop}{word}")
+            parts.append(f"{pop}{word}")
             if wi < len(line) - 1:
                 parts.append(" ")
             word_pos += 1
         y = top_y + li * line_height
         events.append(
-            f"Dialogue: 1,0:00:00.00,{end_ts},Hook,,0,0,0,,"
+            f"Dialogue: 1,0:00:00.00,{end_ts},HookKey,,0,0,0,,"
             f"{{\\an8\\pos({center_x},{y})\\fad(0,280)}}{''.join(parts)}"
         )
     return events

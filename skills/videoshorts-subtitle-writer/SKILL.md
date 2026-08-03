@@ -41,10 +41,14 @@ python write_subtitles.py ../videoshorts-memory/transcripts/<stem>/transcript.js
 
 По умолчанию включён (`VIDEOSHORTS_HOOK_TITLE=1`, `--no-hook-title` выключает):
 первые ~3 сек (`VIDEOSHORTS_HOOK_TITLE_DURATION`) поверх видео pop-in заставка
-из поля `hook` момента — CAPS, ≤6 слов, ≤3 строк, ключевое слово на жёлтой плашке
-(стили `Hook`/`HookKey` в ASS, per-line `\pos` внутри safe zone). Текст режется
+из поля `hook` момента — CAPS, ≤6 слов, ≤3 строк, **все слова на жёлтых плашках**
+(стиль `HookKey` в ASS, per-line `\pos` внутри safe zone). Текст режется
 `_hook_clean_words`/`_hook_wrap` в `subtitle_engine.py` — заставка не обязана быть
 дословной, лишние слова отбрасываются.
+
+**Pop SFX**: при вшивании (`burn_subtitles.py`) на каждое слово заставки миксуется
+короткий pop-звук (sine 900 Гц, exp-затухание 85 мс) с задержкой по стаггеру слов
+(`HOOK_WORD_STAGGER = 0.16` сек). Выключается `VIDEOSHORTS_HOOK_SFX=0`.
 
 ## Safe zone (UI платформ)
 
