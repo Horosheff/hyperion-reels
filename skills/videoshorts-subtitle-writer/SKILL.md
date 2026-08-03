@@ -37,6 +37,15 @@ python write_subtitles.py ../videoshorts-memory/transcripts/<stem>/transcript.js
 
 `--only-indexes` — частичная регенерация после re-cut (INC-20260725-2100): не затирает субтитры APPROVE-клипов.
 
+## Hook-заголовок (заставка)
+
+По умолчанию включён (`VIDEOSHORTS_HOOK_TITLE=1`, `--no-hook-title` выключает):
+первые ~3 сек (`VIDEOSHORTS_HOOK_TITLE_DURATION`) поверх видео pop-in заставка
+из поля `hook` момента — CAPS, ≤6 слов, ≤3 строк, ключевое слово на жёлтой плашке
+(стили `Hook`/`HookKey` в ASS, per-line `\pos` внутри safe zone). Текст режется
+`_hook_clean_words`/`_hook_wrap` в `subtitle_engine.py` — заставка не обязана быть
+дословной, лишние слова отбрасываются.
+
 ## Safe zone (UI платформ)
 
 `subtitle_engine` принудительно поднимает MarginV/L/R до safe area Shorts/Reels/TikTok

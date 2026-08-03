@@ -180,6 +180,13 @@ def main() -> None:
     parser.add_argument("--hook-style", action=argparse.BooleanOptionalAction, default=None, help="Scale first word in each ASS line")
     parser.add_argument("--hook-scale", type=float, default=None, help="ASS hook-style scale, default 1.3")
     parser.add_argument(
+        "--hook-title",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Pop-in заголовок первые ~3 сек из hook момента (default: on)",
+    )
+    parser.add_argument("--hook-title-duration", type=float, default=None, help="Секунд показа заставки, default 3.0")
+    parser.add_argument(
         "--only-indexes",
         default=None,
         help="Partial regen after re-cut: comma/space list of clip indexes (e.g. 1,2,5). "
@@ -204,12 +211,18 @@ def main() -> None:
     if args.template_json and not load_custom_template(args.template_json):
         print(f"[ERROR] Custom template is invalid or missing: {args.template_json}", file=sys.stderr)
         sys.exit(1)
+    import os
     if args.hook_style is not None:
-        import os
         os.environ["VIDEOSHORTS_SUBTITLES_HOOK_STYLE"] = "1" if args.hook_style else "0"
     if args.hook_scale is not None:
-        import os
         os.environ["VIDEOSHORTS_SUBTITLES_HOOK_SCALE"] = str(args.hook_scale)
+    hook_title_enabled = (
+        args.hook_title
+        if args.hook_title is not None
+        else os.environ.get("VIDEOSHORTS_HOOK_TITLE", "1").strip().lower() not in {"0", "false", "off"}
+    )
+    if args.hook_title_duration is not None:
+        os.environ["VIDEOSHORTS_HOOK_TITLE_DURATION"] = str(args.hook_title_duration)
 
     sub_dir = args.output_dir / "subtitles"
     sub_dir.mkdir(parents=True, exist_ok=True)
@@ -264,6 +277,7 @@ def main() -> None:
         }
 
         if use_ass:
+            hook_text = str(raw.get("hook") or "").strip() if hook_title_enabled else None
             write_ass(
                 ass_path,
                 remapped_words,
@@ -274,8 +288,11 @@ def main() -> None:
                 args.height,
                 custom_template=args.template_json,
                 emoji=args.emoji,
+                hook_text=hook_text or None,
             )
             entry["ass"] = str(ass_path.name)
+            if hook_text:
+                entry["hook_title"] = hook_text
         if args.format in ("srt", "both") or not use_ass:
             write_srt_for_clip(srt_path, remapped_segments, 0.0, rendered_duration, words=remapped_words)
             entry["srt"] = str(srt_path.name)

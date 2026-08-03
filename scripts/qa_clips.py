@@ -150,7 +150,7 @@ def subtitle_safe_zone_violations(ass_path: Path, width: int, height: int) -> li
     zone = get_safe_zone(width, height)
     if alignment in (1, 2, 3) and margin_v < zone.bottom:
         warnings.append(f"subtitle_margin_v_in_unsafe_zone({int(margin_v)}<{zone.bottom})")
-    if alignment in (4, 5, 6) and margin_v < zone.top:
+    if alignment in (7, 8, 9) and margin_v < zone.top:
         warnings.append(f"subtitle_margin_v_in_top_zone({int(margin_v)}<{zone.top})")
     if margin_l < zone.left:
         warnings.append(f"subtitle_margin_l_in_unsafe_zone({int(margin_l)}<{zone.left})")

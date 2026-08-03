@@ -225,6 +225,114 @@ def generate_karaoke_line(
     return f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{text}"
 
 
+HOOK_KEY_COLOR = "#FFE500"  # жёлтая плашка ключевого слова (как «NEWS» на референсе)
+
+
+def _hook_top_margin(video_height: int) -> int:
+    """Верхняя треть кадра, но ниже шапки канала (safe top)."""
+    from safe_zones import get_safe_zone
+    return get_safe_zone(1, video_height).top + int(video_height * 0.13)
+
+
+def generate_hook_styles(template: SubtitleTemplate, video_width: int, video_height: int) -> str:
+    """Доп. стили Hook/HookKey для заголовка-заставки (pop-in, жёлтая плашка)."""
+    size = max(template.font_size + 10, int(template.font_size * 1.6))
+    margin_v = _hook_top_margin(video_height)
+    margin_l, margin_r = subtitle_side_margins(video_width)
+    margin_l = max(margin_l, template.margin_h)
+    margin_r = max(margin_r, template.margin_h)
+    white = hex_to_ass_color(template.primary_color)
+    outline = hex_to_ass_color(template.outline_color)
+    black = hex_to_ass_color("#000000")
+    key_bg = hex_to_ass_color(HOOK_KEY_COLOR)
+    key_text = black
+    box_outline = hex_to_ass_color(HOOK_KEY_COLOR)
+    return (
+        f"Style: Hook,{template.font},{size},{white},{white},{outline},{black},-1,0,0,0,100,100,0,0,1,{max(4, template.outline_width + 1)},1,8,{margin_l},{margin_r},{margin_v},1\n"
+        f"Style: HookKey,{template.font},{size},{key_text},{key_text},{box_outline},{key_bg},-1,0,0,0,100,100,0,0,3,4,0,8,{margin_l},{margin_r},{margin_v},1\n"
+    )
+
+
+def _hook_clean_words(text: str, max_words: int = 6) -> list[str]:
+    words = re.findall(r"[0-9A-Za-zА-Яа-яЁё]+(?:[-–][0-9A-Za-zА-Яа-яЁё]+)?", text or "")
+    words = [w for w in words if not w.lower().startswith(("http", "www"))]
+    return [w.upper() for w in words[:max_words]]
+
+
+def _hook_wrap(words: list[str], max_chars: int = 12, max_lines: int = 3) -> list[list[str]]:
+    """Строки ≤ max_chars; слова, не влезшие в max_lines строк, отбрасываются —
+    заставка обязана остаться внутри safe width, а не дословной цитатой."""
+    lines: list[list[str]] = []
+    current: list[str] = []
+    for word in words:
+        if current and sum(len(w) for w in current) + len(current) - 1 + 1 + len(word) > max_chars:
+            lines.append(current)
+            current = []
+            if len(lines) >= max_lines:
+                break
+        current.append(word)
+    if current and len(lines) < max_lines:
+        lines.append(current)
+    return lines
+
+
+def _hook_keyword_index(words: list[str]) -> int:
+    best, best_len = 0, 0
+    for i, word in enumerate(words):
+        if len(word) >= 4 and len(word) > best_len:
+            best, best_len = i, len(word)
+    return best
+
+
+def generate_hook_event(
+    hook_text: str,
+    template: SubtitleTemplate,
+    duration: float = 3.0,
+    word_stagger: float = 0.16,
+    video_width: int = 720,
+    video_height: int = 1280,
+) -> list[str]:
+    r"""По одному Dialogue на строку заставки: pop-in пословно + bounce,
+    жёлтая плашка ключевого слова, fade-out. Каждая строка на явном \pos —
+    libass якорит многострочные блоки непредсказуемо, по-строчно надёжнее."""
+    words = _hook_clean_words(hook_text)
+    if not words:
+        return []
+    key_idx = _hook_keyword_index(words)
+    lines = _hook_wrap(words)
+    hook_style_size = max(template.font_size + 10, int(template.font_size * 1.6))
+    line_height = int(hook_style_size * 1.35)
+    top_y = _hook_top_margin(video_height)
+    center_x = video_width // 2
+    end_ts = format_ass_time(max(duration, 0.6))
+    events: list[str] = []
+    word_pos = 0
+    for li, line in enumerate(lines):
+        parts: list[str] = []
+        for wi, word in enumerate(line):
+            t0 = int(word_pos * word_stagger * 1000)
+            t1 = t0 + 160
+            t2 = t0 + 280
+            pop = (
+                f"{{\\alpha&HFF&\\fscx150\\fscy150"
+                f"\\t({t0},{t1},\\fscx118\\fscy118\\alpha&H00&)"
+                f"\\t({t1},{t2},\\fscx100\\fscy100)}}"
+            )
+            if word_pos == key_idx:
+                parts.append(f"{{\\rHookKey}}{pop}{word}{{\\rHook}}")
+            else:
+                parts.append(f"{pop}{word}")
+            if wi < len(line) - 1:
+                parts.append(" ")
+            word_pos += 1
+        y = top_y + li * line_height
+        events.append(
+            f"Dialogue: 1,0:00:00.00,{end_ts},Hook,,0,0,0,,"
+            f"{{\\an8\\pos({center_x},{y})\\fad(0,280)}}{''.join(parts)}"
+        )
+    return events
+
+
 EMOJI_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(важно|главное|attention|important)\b", re.I), " ⚡"),
     (re.compile(r"\b(огонь|круто|вау|wow|amazing|incredible)\b", re.I), " 🔥"),
@@ -269,10 +377,12 @@ def write_ass(
     video_height: int = 1280,
     custom_template: Path | None = None,
     emoji: bool | None = None,
+    hook_text: str | None = None,
 ) -> None:
     template = resolve_template(template_name, custom_template)
     hook_style = _env_bool("VIDEOSHORTS_SUBTITLES_HOOK_STYLE", "0")
     hook_scale = _env_float("VIDEOSHORTS_SUBTITLES_HOOK_SCALE", "1.3")
+    hook_duration = _env_float("VIDEOSHORTS_HOOK_TITLE_DURATION", "3.0")
 
     clip_words = []
     for w in words:
@@ -287,7 +397,20 @@ def write_ass(
         clip_words = add_rule_based_emojis(clip_words)
 
     if not clip_words:
-        path.write_text(generate_ass_header(template, video_width, video_height), encoding="utf-8")
+        header = generate_ass_header(template, video_width, video_height)
+        hook_events = (
+            generate_hook_event(hook_text, template, duration=hook_duration,
+                                video_width=video_width, video_height=video_height)
+            if hook_text else []
+        )
+        if hook_events:
+            header = header.replace(
+                "\n[Events]",
+                "\n" + generate_hook_styles(template, video_width, video_height) + "[Events]",
+                1,
+            )
+            header += "\n".join(hook_events) + "\n"
+        path.write_text(header, encoding="utf-8")
         return
 
     lines: list[list[dict]] = []
@@ -314,6 +437,18 @@ def write_ass(
         lines.append(current_line)
 
     content = generate_ass_header(template, video_width, video_height)
+    hook_events = (
+        generate_hook_event(hook_text, template, duration=hook_duration,
+                            video_width=video_width, video_height=video_height)
+        if hook_text else []
+    )
+    if hook_events:
+        content = content.replace(
+            "\n[Events]",
+            "\n" + generate_hook_styles(template, video_width, video_height) + "[Events]",
+            1,
+        )
+        content += "\n".join(hook_events) + "\n"
     for line_words in lines:
         if not line_words:
             continue
