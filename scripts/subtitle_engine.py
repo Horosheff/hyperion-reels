@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from safe_zones import subtitle_min_margin_v, subtitle_side_margins
+
 
 def _env_bool(name: str, default: str = "0") -> bool:
     return os.environ.get(name, default).strip().lower() in ("1", "true", "yes")
@@ -164,6 +166,17 @@ def generate_ass_header(template: SubtitleTemplate, video_width: int = 720, vide
     bold = -1 if template.bold else 0
     italic = -1 if template.italic else 0
 
+    # Safe zone: субтитры не должны попадать под UI платформы (название/описание
+    # снизу, колонка лайков справа). Отступы шаблона только увеличиваем.
+    margin_v = template.margin_v
+    margin_l = template.margin_h
+    margin_r = template.margin_h
+    if template.position == "bottom":
+        margin_v = max(margin_v, subtitle_min_margin_v(video_height))
+    min_l, min_r = subtitle_side_margins(video_width)
+    margin_l = max(margin_l, min_l)
+    margin_r = max(margin_r, min_r)
+
     return f"""[Script Info]
 Title: VideoShorts Subtitles
 ScriptType: v4.00+
@@ -174,7 +187,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{template.font},{template.font_size},{primary},{secondary},{outline},{back},{bold},{italic},0,0,100,100,0,0,1,{template.outline_width},{template.shadow},{alignment},{template.margin_h},{template.margin_h},{template.margin_v},1
+Style: Default,{template.font},{template.font_size},{primary},{secondary},{outline},{back},{bold},{italic},0,0,100,100,0,0,1,{template.outline_width},{template.shadow},{alignment},{margin_l},{margin_r},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

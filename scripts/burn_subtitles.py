@@ -16,6 +16,7 @@ from pathlib import Path
 
 from videoshorts_core import _run_ffmpeg, configure_stdio, find_ffmpeg
 from quality_presets import resolve_preset, video_encode_args
+from safe_zones import get_safe_zone, safe_zone_enabled, subtitle_min_margin_v, subtitle_side_margins
 import vs_logging
 
 configure_stdio()
@@ -75,10 +76,18 @@ def get_progress_bar_filter(
 ) -> str:
     color = "0x" + color.lstrip("#")
     bg_color = "0x" + bg_color.lstrip("#")
-    y = 0 if position == "top" else max(0, height - bar_height)
+    if safe_zone_enabled():
+        zone = get_safe_zone(width, height)
+        y = zone.safe_top if position == "top" else max(0, zone.safe_bottom - bar_height)
+        x = zone.safe_left
+        bar_width = max(1, zone.safe_right - zone.safe_left)
+    else:
+        y = 0 if position == "top" else max(0, height - bar_height)
+        x = 0
+        bar_width = width
     return (
-        f"drawbox=x=0:y={y}:w={width}:h={bar_height}:color={bg_color}:t=fill,"
-        f"drawbox=x=0:y={y}:w='min({width},t/{max(duration, 0.001):.3f}*{width})':"
+        f"drawbox=x={x}:y={y}:w={bar_width}:h={bar_height}:color={bg_color}:t=fill,"
+        f"drawbox=x={x}:y={y}:w='min({bar_width},t/{max(duration, 0.001):.3f}*{bar_width})':"
         f"h={bar_height}:color={color}:t=fill"
     )
 
@@ -137,7 +146,13 @@ def apply_video_filter(input_mp4: Path, output_mp4: Path, vf: str, quality_prese
     return result and output_mp4.is_file()
 
 
-def build_subtitle_filter(sub_path: Path, font_size: int = 42, margin_v: int = 80) -> tuple[str, Path | None]:
+def build_subtitle_filter(
+    sub_path: Path,
+    font_size: int = 42,
+    margin_v: int = 80,
+    video_width: int = 1080,
+    video_height: int = 1920,
+) -> tuple[str, Path | None]:
     is_ass = sub_path.suffix.lower() == ".ass"
     temp_sub: Path | None = None
     sub_file = sub_path
@@ -156,9 +171,12 @@ def build_subtitle_filter(sub_path: Path, font_size: int = 42, margin_v: int = 8
     if is_ass:
         vf = f"ass='{sub_escaped}'"
     else:
+        margin_v = max(margin_v, subtitle_min_margin_v(video_height))
+        margin_l, margin_r = subtitle_side_margins(video_width)
         style = (
             f"FontName=Arial,FontSize={font_size},PrimaryColour=&H00FFFFFF,"
-            f"OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV={margin_v}"
+            f"OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,"
+            f"MarginV={margin_v},MarginL={margin_l},MarginR={margin_r}"
         )
         vf = f"subtitles='{sub_escaped}':force_style='{style}'"
     return vf, temp_sub
@@ -193,8 +211,13 @@ def burn_subtitles(
     margin_v: int = 80,
     quality_preset: str = "release",
     extra_filters: list[str] | None = None,
+    video_width: int = 1080,
+    video_height: int = 1920,
 ) -> bool:
-    sub_vf, temp_sub = build_subtitle_filter(sub_path, font_size=font_size, margin_v=margin_v)
+    sub_vf, temp_sub = build_subtitle_filter(
+        sub_path, font_size=font_size, margin_v=margin_v,
+        video_width=video_width, video_height=video_height,
+    )
     filters = [sub_vf, *(extra_filters or [])]
     ok = render_final_clip(input_mp4, output_mp4, filters, quality_preset=quality_preset)
     if temp_sub and temp_sub.exists():
@@ -317,7 +340,10 @@ def main() -> None:
                 )
             )
         print(f"   burn(1-pass): {source.name} + {sub.name} → {out.name}")
-        if not burn_subtitles(source, sub, out, quality_preset=quality["name"], extra_filters=extra):
+        if not burn_subtitles(
+            source, sub, out, quality_preset=quality["name"], extra_filters=extra,
+            video_width=res[0], video_height=res[1],
+        ):
             print(f"   [WARN] Burn failed: {source.name}", file=sys.stderr)
             return False
         return True

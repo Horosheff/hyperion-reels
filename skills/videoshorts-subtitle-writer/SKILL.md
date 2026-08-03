@@ -37,6 +37,14 @@ python write_subtitles.py ../videoshorts-memory/transcripts/<stem>/transcript.js
 
 `--only-indexes` — частичная регенерация после re-cut (INC-20260725-2100): не затирает субтитры APPROVE-клипов.
 
+## Safe zone (UI платформ)
+
+`subtitle_engine` принудительно поднимает MarginV/L/R до safe area Shorts/Reels/TikTok
+(низ ~19.5% высоты — название/описание, право ~18% ширины — колонка лайков,
+верх ~10.5%, лево ~5%). Замеры: `scripts/safe_zones.py`, отключение — `VIDEOSHORTS_SAFE_ZONE=0`.
+Не занижать отступы шаблонов вручную: Guardian (`qa_clips.py`) помечает
+`subtitle_margin_*_in_unsafe_zone` и кладёт issue в qa-report.
+
 
 
 ## Требования

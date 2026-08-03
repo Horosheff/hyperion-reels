@@ -11,7 +11,9 @@ from pathlib import Path
 
 from videoshorts_core import configure_stdio, write_latest_results
 from agent_gate import agent_mode_enabled, evaluate_agent_decisions, evaluate_uniform_durations, gate_message
+from safe_zones import get_safe_zone, safe_zone_enabled
 import json_store
+import re
 import vs_logging
 
 configure_stdio()
@@ -114,12 +116,57 @@ def audio_metrics_by_file(clips_dir: Path) -> dict[str, dict]:
     } if isinstance(data, dict) else {}
 
 
-def safe_zone_check(clip_name: str, resolution: tuple[int, int] | None, has_subtitles: bool) -> dict:
+_ASS_STYLE_RE = re.compile(r"^Style:\s*Default,.*$", re.M)
+
+
+def subtitle_safe_zone_violations(ass_path: Path, width: int, height: int) -> list[str]:
+    """Проверяет MarginV/L/R в ASS против safe zone платформенного UI.
+
+    MarginV меньше нижней небезопасной зоны → субтитры уедут под
+    название/описание после публикации (лайки справа — MarginR).
+    """
+    if not safe_zone_enabled() or not ass_path.is_file():
+        return []
+    try:
+        text = ass_path.read_text(encoding="utf-8-sig")
+    except Exception:
+        return []
+    style = _ASS_STYLE_RE.search(text or "")
+    if not style:
+        return []
+    fields = style.group(0).split(",")
+    if len(fields) < 22:
+        return []
+    warnings: list[str] = []
+    try:
+        play_res_y = int(re.search(r"^PlayResY:\s*(\d+)", text, re.M).group(1)) if re.search(r"^PlayResY:\s*(\d+)", text, re.M) else height
+        scale = height / play_res_y if play_res_y else 1.0
+        margin_l = int(fields[19]) * scale
+        margin_r = int(fields[20]) * scale
+        margin_v = int(fields[21]) * scale
+        alignment = int(fields[18])
+    except (ValueError, IndexError):
+        return ["subtitle_style_unparsed"]
+    zone = get_safe_zone(width, height)
+    if alignment in (1, 2, 3) and margin_v < zone.bottom:
+        warnings.append(f"subtitle_margin_v_in_unsafe_zone({int(margin_v)}<{zone.bottom})")
+    if alignment in (4, 5, 6) and margin_v < zone.top:
+        warnings.append(f"subtitle_margin_v_in_top_zone({int(margin_v)}<{zone.top})")
+    if margin_l < zone.left:
+        warnings.append(f"subtitle_margin_l_in_unsafe_zone({int(margin_l)}<{zone.left})")
+    if margin_r < zone.right:
+        warnings.append(f"subtitle_margin_r_in_unsafe_zone({int(margin_r)}<{zone.right})")
+    return warnings
+
+
+def safe_zone_check(clip_name: str, resolution: tuple[int, int] | None, has_subtitles: bool, ass_path: Path | None = None) -> dict:
     warnings: list[str] = []
     if resolution:
         width, height = resolution
         if height <= width:
             warnings.append("not_vertical_canvas")
+        elif ass_path is not None:
+            warnings.extend(subtitle_safe_zone_violations(ass_path, width, height))
         if width < 540 or height < 960:
             warnings.append("low_resolution_for_readability")
     else:
@@ -131,10 +178,12 @@ def safe_zone_check(clip_name: str, resolution: tuple[int, int] | None, has_subt
         "status": "PASS" if not warnings else "WARN",
         "warnings": warnings,
         "heuristics": {
-            "safe_zone_bottom_pct": 14,
-            "safe_zone_top_pct": 10,
+            "safe_zone_bottom_pct": 19.5,
+            "safe_zone_top_pct": 10.5,
+            "safe_zone_left_pct": 5.0,
+            "safe_zone_right_pct": 18.0,
             "readability_min_width": 540,
-            "note": "Placeholder heuristic: validates canvas/subtitle presence; pixel OCR is P1.",
+            "note": "ASS MarginV/L/R сверяются с safe zone UI платформ (scripts/safe_zones.py).",
         },
     }
 
@@ -146,8 +195,14 @@ def write_aux_reports(clips_dir: Path, results: list[dict], audio_by_file: dict[
     for item in results:
         file_name = str(item.get("file"))
         idx = file_name.replace("clip_", "").replace("_cropped.mp4", "").replace(".mp4", "")
-        has_subtitles = (subtitles_dir / f"clip_{idx}.ass").is_file() or (subtitles_dir / f"clip_{idx}.srt").is_file()
-        safe_item = safe_zone_check(file_name, tuple(item["resolution"]) if isinstance(item.get("resolution"), list) else item.get("resolution"), has_subtitles)
+        ass_path = subtitles_dir / f"clip_{idx}.ass"
+        has_subtitles = ass_path.is_file() or (subtitles_dir / f"clip_{idx}.srt").is_file()
+        safe_item = safe_zone_check(
+            file_name,
+            tuple(item["resolution"]) if isinstance(item.get("resolution"), list) else item.get("resolution"),
+            has_subtitles,
+            ass_path=ass_path,
+        )
         safe_zone["clips"].append(safe_item)
         if safe_item["status"] != "PASS":
             safe_zone["status"] = "WARN"
@@ -259,7 +314,7 @@ def main() -> None:
     safe_zone, audio_qa = write_aux_reports(args.clips_dir, results, audio_by_file)
     for safe_item in safe_zone.get("clips", []):
         for warning in safe_item.get("warnings", []):
-            if warning in {"not_vertical_canvas", "low_resolution_for_readability"}:
+            if warning in {"not_vertical_canvas", "low_resolution_for_readability"} or warning.startswith("subtitle_margin"):
                 issues.append(f"{safe_item.get('file')}: safe-zone warning {warning}")
     for audio_item in audio_qa.get("clips", []):
         for warning in audio_item.get("warnings", []):
