@@ -69,11 +69,17 @@ def main() -> None:
         if not cover:
             blockers.append(f"clip_{index:02d}: cover missing")
             continue
-        video_name = meta.get("clip_file") or f"clip_{index:02d}.mp4"
-        video_path = clips_dir / video_name
-        if not video_path.is_file():
-            alt = clips_dir / f"clip_{index:02d}.mp4"
-            video_path = alt if alt.is_file() else video_path
+        # metadata-manifest пишется до вшивания субтитров и ссылается на
+        # clip_XX_cropped.mp4 (без субтитров). Burned clip_XX.mp4 — в приоритете.
+        burned_path = clips_dir / f"clip_{index:02d}.mp4"
+        meta_name = str(meta.get("clip_file") or "")
+        meta_path = clips_dir / meta_name if meta_name else None
+        if burned_path.is_file() and burned_path.name != meta_name:
+            video_path = burned_path
+        elif meta_path is not None and meta_path.is_file():
+            video_path = meta_path
+        else:
+            video_path = burned_path
         platform_jobs = {}
         for platform in platforms:
             pack = (meta.get("platforms") or {}).get(platform) or {

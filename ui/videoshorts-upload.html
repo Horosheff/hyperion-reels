@@ -1024,7 +1024,7 @@
 
     .agent-map {
       display: grid;
-      grid-template-columns: repeat(4, minmax(140px, 1fr));
+      grid-template-columns: repeat(5, minmax(130px, 1fr));
       gap: 12px;
       flex: 1;
       position: relative;
@@ -1866,7 +1866,7 @@
           <div class="main-head">
             <div>
               <h2>ИИ-Конвейер Монтажа</h2>
-              <p>Гиперион · 20 субагентов · автономный цикл</p>
+              <p>Гиперион · 25 субагентов · автономный цикл</p>
             </div>
             <div class="tools">
               <span class="tool">Agent Mode</span>
@@ -1900,13 +1900,13 @@
               <div class="agent-orbit" aria-hidden="true"></div>
               <div class="agent-dots" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
               <span class="badge">Автономный цикл</span>
-              <h3>20 ИИ-субагентов</h3>
+              <h3>25 ИИ-субагентов</h3>
               <p>От Whisper до Guardian — полный монтажный конвейер</p>
               <div class="agent-flow">
                 <em>Whisper</em><em>Editor</em><em>Cutter</em><em>QA</em>
               </div>
               <div class="viz-foot">
-                <b style="font-size:var(--fs-xl);font-weight:var(--fw-semibold);">20 / 20</b>
+                <b style="font-size:var(--fs-xl);font-weight:var(--fw-semibold);">25 / 25</b>
                 <a class="btn-blue" href="./videoshorts-results.html">Результаты ↗</a>
               </div>
             </div>
@@ -2104,7 +2104,7 @@
                   <h3>Конвейер субагентов</h3>
                   <p>Director запускает роли по порядку — от входа до пакета</p>
                 </div>
-                <span class="pill-tag">20 ролей</span>
+                <span class="pill-tag">24 роли</span>
               </div>
 
               <div class="agent-map" aria-label="Карта субагентов">
@@ -2148,8 +2148,9 @@
                     <div class="node"><i>11</i><b>Драматург</b><span>Проверяет дугу: завязка → вывод</span></div>
                     <div class="node"><i>12</i><b>План монтажа</b><span>Пишет ТЗ: склейки, зум, паузы</span></div>
                     <div class="node"><i>13</i><b>Нарезка 9:16</b><span>Режет вертикальные клипы ffmpeg</span></div>
-                    <div class="node"><i>14</i><b>Звук</b><span>Метрики и нормализация громкости</span></div>
-                    <div class="node"><i>15</i><b>Субтитры</b><span>Пишет ASS/SRT по пресету</span></div>
+                    <div class="node"><i>14</i><b>B-roll</b><span>Вставки картинок и видео поверх</span></div>
+                    <div class="node"><i>15</i><b>Звук</b><span>Метрики и нормализация громкости</span></div>
+                    <div class="node"><i>16</i><b>Субтитры</b><span>Пишет ASS/SRT по пресету</span></div>
                   </div>
                 </div>
 
@@ -2160,17 +2161,30 @@
                     <small>QA, SEO и пакет для публикации</small>
                   </div>
                   <div class="lane-nodes">
-                    <div class="node"><i>16</i><b>Вшивание</b><span>Жжёт субтитры прямо в MP4</span></div>
-                    <div class="node"><i>17</i><b>Guardian QA</b><span>Проверяет длину, кадр и звук</span></div>
-                    <div class="node"><i>18</i><b>Пострендер</b><span>Смотрит готовые ролики после рендера</span></div>
-                    <div class="node"><i>19</i><b>SEO-тексты</b><span>Titles и descriptions для площадок</span></div>
-                    <div class="node"><i>20</i><b>Упаковка</b><span>Собирает папку для ручной загрузки</span></div>
+                    <div class="node"><i>17</i><b>Вшивание</b><span>Жжёт субтитры прямо в MP4</span></div>
+                    <div class="node"><i>18</i><b>Guardian QA</b><span>Проверяет длину, кадр и звук</span></div>
+                    <div class="node"><i>19</i><b>Пострендер</b><span>Смотрит готовые ролики после рендера</span></div>
+                    <div class="node"><i>20</i><b>SEO-тексты</b><span>Titles и descriptions для площадок</span></div>
+                    <div class="node"><i>21</i><b>Упаковка</b><span>Собирает папку для ручной загрузки</span></div>
+                  </div>
+                </div>
+
+                <div class="agent-lane agent-lane--soft">
+                  <div class="lane-head">
+                    <span class="lane-no">Этап 05</span>
+                    <b>Публикация</b>
+                    <small>Обложки, очередь и автопостинг</small>
+                  </div>
+                  <div class="lane-nodes">
+                    <div class="node"><i>22</i><b>Обложки</b><span>Готовит обложки выбранных клипов</span></div>
+                    <div class="node"><i>23</i><b>Очередь</b><span>Строит очередь READY_TO_PUBLISH</span></div>
+                    <div class="node"><i>24</i><b>Фиксик</b><span>Чинит пайплайн после сбоев</span></div>
                   </div>
                 </div>
               </div>
 
               <div class="agent-flow-caption">
-                <span>Слева направо: <strong>вход → смысл → монтаж → выпуск</strong></span>
+                <span>Слева направо: <strong>вход → смысл → монтаж → выпуск → публикация</strong></span>
                 <span>Обложки и очередь — после выбора клипов</span>
               </div>
               <div class="diag" id="systemProfile">CPU, RAM, GPU и FFmpeg проверяются…</div>
