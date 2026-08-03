@@ -277,14 +277,6 @@ def _hook_wrap(words: list[str], max_chars: int = 12, max_lines: int = 3) -> lis
     return lines
 
 
-def _hook_keyword_index(words: list[str]) -> int:
-    best, best_len = 0, 0
-    for i, word in enumerate(words):
-        if len(word) >= 4 and len(word) > best_len:
-            best, best_len = i, len(word)
-    return best
-
-
 def generate_hook_event(
     hook_text: str,
     template: SubtitleTemplate,
