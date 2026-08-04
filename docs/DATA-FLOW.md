@@ -12,7 +12,7 @@
 | 1 | system-profiler | ПК, Python, FFmpeg, Whisper, Playwright | `system-profile.json`, `dependencies-report.json` | `ready: true`, иначе стоп |
 | 2 | intake | Видео + brief из UI (`run-request.json`) | `00-brief.md`, `input/<video>`, `intake-report.json` | brief `min_sec/max_sec/count` |
 | 3 | transcriber | `input/<video>` | `transcripts/<stem>/transcript.json` (+ `.srt`) | наличие `segments[]` с таймкодами |
-| 4 | cleanup-planner | `transcript.json` | `transcripts/<stem>/cleanup-plan.json`, `filler-removal-plan.json` | `validate cleanup-plan` |
+| 4 | cleanup-planner | `transcript.json`, опц. `vad-speech-spans.json` (Silero VAD, `vad_spans.py`) | `transcripts/<stem>/cleanup-plan.json`, `filler-removal-plan.json` | `validate cleanup-plan` |
 | 5 | moment-finder | `transcript.json`, `cleanup-plan.json`, brief | `moments/candidate-moments.json` → `moments/<stem>-moments.json` | `validate candidates`, `validate moments` |
 | 6 | scorekeeper/editor | `<stem>-moments.json` | `moments/clip-scores.json`, `editor-review.json`, `virality-review.json` | `validate clip-scores`, `editor-review`, `virality-review` |
 | 7 | boundary-refiner | моменты + оценки, `transcript.json` | `moments/refined-moments.json`, `clip-decisions.json`, `montage-plan.json` | `validate refined-moments`, `clip-decisions`, `montage-plan` + **`validate editorial-bundle`** (кросс-артефактный гейт) |

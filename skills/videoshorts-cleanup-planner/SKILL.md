@@ -28,6 +28,24 @@ description: План чистки речи — пишет cleanup-plan.json с�
 и `reason`. Для удаляемых items укажи `safe: true`; для review/preserve —
 `safe: false`.
 
+## Silero VAD (точная тишина)
+
+Если установлен пакет `silero-vad` (есть в requirements.txt), перед планом
+сгенерируй акустическую карту речи/тишины по исходному видео:
+
+```bash
+cd scripts
+python vad_spans.py "../videoshorts-memory/input/<source>.mp4" `
+  -o "../videoshorts-memory/transcripts/<stem>/vad-speech-spans.json"
+```
+
+`cleanup_plan.py --heuristic` подхватит `vad-speech-spans.json` автоматически
+(или передай `--vad-spans`) и возьмёт silence gaps из VAD — это акустическая
+истина, а не разрывы word-timestamps Whisper (~77% word-gap «пауз» — дыхание,
+шум, дрейф таймстампов, резать по ним нельзя). В cleanup-plan.json поле
+`silence_source: silero_vad | word_gap_heuristic`. Если пакета нет или
+`VIDEOSHORTS_VAD=0` — fallback на word-gap эвристику.
+
 ## Действия
 
 1. Прочитай transcript с ближайшим контекстом, найди silence gaps, fillers,

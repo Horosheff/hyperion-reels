@@ -37,6 +37,16 @@ Guardian QA меряет **финальный** MP4 после jump-cut/silence 
 - Если ниже — **расширь** raw start/end (пока не упрёшься в topic-shift / max_sec) или **смягчи** jump_cuts / silence_remove; иначе → `rejected_clips[]` / montage `status: REVIEW`, **не** `READY_FOR_CUTTER`.
 - Поля пиши в clip и в `boundary_refinement` / montage clip.
 
+## VAD safe snap
+
+Если cleanup-plan построен на Silero VAD (`silence_source: silero_vad`),
+`refine_boundaries.py --heuristic` дополнительно применяет `_vad_safe_snap`:
+точка реза, попавшая внутрь речи (по акустике VAD), сдвигается к краю
+ближайшей тишины (≤0.45 с; start → `gap.end`, end → `gap.start`). Срабатывания
+видны в `cleanup_refinement.vad_safe_snap`. Рез по краю VAD-тишины не задевает
+фонему (speech_pad защита), word-timestamps Whisper при этом плывут — VAD
+приоритетнее.
+
 ## Действия
 
 1. Уточни start/end по segment/word/silence/filler; **не** режь punch-pause ~1.2s после hook.

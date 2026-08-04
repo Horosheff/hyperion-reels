@@ -15,6 +15,7 @@ from pathlib import Path
 
 from videoshorts_core import configure_stdio, segments_from_json, words_from_transcript_json
 from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode, stamp_heuristic
+from vad_spans import default_vad_path_for_transcript, load_vad_map, vad_enabled
 
 configure_stdio()
 
@@ -74,6 +75,43 @@ def detect_silence_gaps(segments: list, words: list[dict], threshold: float) -> 
                 "reason": "silence_gap",
                 "safe": True,
             })
+    return gaps
+
+
+def detect_vad_silence_gaps(vad_map: dict, words: list[dict], threshold: float) -> list[dict]:
+    """Silence gaps из Silero VAD (акустическая земля-истина) + контекст слов."""
+    gaps: list[dict] = []
+    word_timeline = sorted(
+        (
+            (_float(w.get("start")), _float(w.get("end"), w.get("start")), _word_text(w))
+            for w in words
+        ),
+        key=lambda item: item[0],
+    )
+    for gap in vad_map.get("silence_gaps", []):
+        try:
+            start = float(gap["start"])
+            end = float(gap["end"])
+        except Exception:
+            continue
+        duration = end - start
+        if duration < threshold:
+            continue
+        prev_word = next((w for w in reversed(word_timeline) if w[1] <= start + 0.05), None)
+        next_word = next((w for w in word_timeline if w[0] >= end - 0.05), None)
+        gaps.append({
+            "type": "silence_gap",
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "duration": round(duration, 3),
+            "previous": prev_word[2] if prev_word else "",
+            "next": next_word[2] if next_word else "",
+            "action": "candidate_trim_gap",
+            "editorial_action": "remove",
+            "reason": "silence_gap_vad",
+            "source": "silero_vad",
+            "safe": True,
+        })
     return gaps
 
 
@@ -177,11 +215,20 @@ def detect_repeats_and_false_starts(segments: list) -> list[dict]:
     return findings
 
 
-def build_plan(transcript_path: Path, gap_threshold: float) -> tuple[dict, dict]:
+def build_plan(
+    transcript_path: Path,
+    gap_threshold: float,
+    vad_map: dict | None = None,
+) -> tuple[dict, dict]:
     data = json.loads(transcript_path.read_text(encoding="utf-8-sig"))
     segments = segments_from_json(data)
     words = words_from_transcript_json(data)
-    silence = detect_silence_gaps(segments, words, gap_threshold)
+    if vad_map:
+        silence = detect_vad_silence_gaps(vad_map, words, gap_threshold)
+        silence_source = "silero_vad"
+    else:
+        silence = detect_silence_gaps(segments, words, gap_threshold)
+        silence_source = "word_gap_heuristic"
     fillers = detect_fillers(segments, words)
     repeats = detect_repeats_and_false_starts(segments)
     safe_removals = [item for item in [*silence, *fillers] if item.get("safe")]
@@ -191,10 +238,12 @@ def build_plan(transcript_path: Path, gap_threshold: float) -> tuple[dict, dict]
         "schema_version": 1,
         "mode": "plan_only",
         "source_transcript": str(transcript_path.resolve()),
+        "silence_source": silence_source,
         "summary": {
             "segments": len(segments),
             "words": len(words),
             "silence_gaps": len(silence),
+            "silence_source": silence_source,
             "filler_candidates": len(fillers),
             "repeat_or_false_start_candidates": len(repeats),
             "safe_plan_items": len(safe_removals),
@@ -230,6 +279,8 @@ def main() -> None:
     parser.add_argument("-o", "--output", type=Path, default=None)
     parser.add_argument("--filler-output", type=Path, default=None)
     parser.add_argument("--gap-threshold", type=float, default=0.72)
+    parser.add_argument("--vad-spans", type=Path, default=None,
+                        help="vad-speech-spans.json (default: рядом с transcript.json)")
     add_decision_mode_args(parser)
     args = parser.parse_args()
     _artifact_path = args.output or (args.transcript.parent / 'cleanup-plan.json')
@@ -239,7 +290,14 @@ def main() -> None:
         print(f"[ERROR] Transcript not found: {args.transcript}", file=sys.stderr)
         sys.exit(1)
 
-    cleanup, filler = build_plan(args.transcript, args.gap_threshold)
+    vad_map = None
+    if vad_enabled():
+        vad_path = args.vad_spans or default_vad_path_for_transcript(args.transcript)
+        vad_map = load_vad_map(vad_path)
+        if vad_map:
+            print(f"   VAD: {vad_path} ({len(vad_map['silence_gaps'])} acoustic gaps)")
+
+    cleanup, filler = build_plan(args.transcript, args.gap_threshold, vad_map=vad_map)
     out = args.output or (args.transcript.parent / "cleanup-plan.json")
     filler_out = args.filler_output or (args.transcript.parent / "filler-removal-plan.json")
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -248,7 +306,8 @@ def main() -> None:
     filler_out.write_text(json.dumps(stamp_heuristic(filler, 'cleanup_plan'), ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"✅ Cleanup plan: {out}")
     print(f"✅ Filler plan:  {filler_out}")
-    print(f"   safe={cleanup['summary']['safe_plan_items']} review={cleanup['summary']['review_only_items']}")
+    print(f"   safe={cleanup['summary']['safe_plan_items']} review={cleanup['summary']['review_only_items']} "
+          f"silence_source={cleanup['silence_source']}")
 
 
 if __name__ == "__main__":

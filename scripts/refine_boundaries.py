@@ -287,12 +287,50 @@ def _score_by_index(scores: dict) -> dict[str, dict]:
     } if isinstance(scores, dict) else {}
 
 
+def _vad_safe_snap(ts: float, cleanup: dict, direction: str, max_nudge: float = 0.45) -> float:
+    """Если точка реза попала внутрь речи (по Silero VAD), nudge к краю тишины.
+
+    Whisper word-timestamps плывут; VAD silence gaps — акустическая истина с
+    speech_pad защитой, рез по их краю гарантированно не задевает фонему.
+    Работает только когда cleanup построен на VAD (silence_source == silero_vad).
+    """
+    if not isinstance(cleanup, dict) or cleanup.get("silence_source") != "silero_vad":
+        return round(ts, 3)
+    gaps = []
+    for gap in cleanup.get("silence_gaps", []):
+        try:
+            gaps.append((float(gap["start"]), float(gap["end"])))
+        except Exception:
+            continue
+    for start, end in gaps:
+        if start <= ts <= end:
+            return round(ts, 3)  # уже внутри тишины — рез безопасен
+    best: float | None = None
+    best_dist = max_nudge
+    for start, end in gaps:
+        # start-клип → край тишины ближе к речи (gap.end); end → gap.start
+        edge = end if direction == "start" else start
+        dist = abs(edge - ts)
+        if dist <= best_dist:
+            best_dist = dist
+            best = edge
+    return round(best, 3) if best is not None else round(ts, 3)
+
+
 def refine_clip(index: int, raw: dict, segments: list, points: list[float], cleanup: dict, score: dict, min_sec: float, max_sec: float) -> tuple[dict | None, dict | None]:
     original_start = float(raw.get("start", 0))
     original_end = float(raw.get("end", original_start))
     start = _nearest(points, original_start, "start")
     end = _nearest(points, original_end, "end")
     start, end, cleanup_refinement = _trim_cleanup_edges(start, end, cleanup)
+    snapped_start = _vad_safe_snap(start, cleanup, "start")
+    snapped_end = _vad_safe_snap(end, cleanup, "end")
+    if snapped_start != start or snapped_end != end:
+        cleanup_refinement["vad_safe_snap"] = {
+            "start": {"before": start, "after": snapped_start},
+            "end": {"before": end, "after": snapped_end},
+        }
+        start, end = snapped_start, snapped_end
     duration = end - start
 
     if duration < min_sec:

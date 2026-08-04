@@ -3,6 +3,7 @@ opencv-python>=4.8.0
 numpy>=1.24.0
 mediapipe>=0.10.0
 faster-whisper>=1.0.0
+silero-vad>=5.1.0
 tqdm>=4.65.0
 playwright>=1.40.0
 python-dotenv>=1.0.0

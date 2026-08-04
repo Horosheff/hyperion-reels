@@ -29,6 +29,8 @@ PIP_PACKAGES: list[dict[str, str]] = [
     {"import_name": "numpy", "pip_name": "numpy", "label": "NumPy"},
     {"import_name": "mediapipe", "pip_name": "mediapipe", "label": "MediaPipe"},
     {"import_name": "faster_whisper", "pip_name": "faster-whisper", "label": "faster-whisper"},
+    # Опционально: без VAD cleanup_plan откатывается на word-gap эвристику
+    {"import_name": "silero_vad", "pip_name": "silero-vad", "label": "Silero VAD (точная тишина)", "required": False},
     {"import_name": "tqdm", "pip_name": "tqdm", "label": "tqdm"},
     {"import_name": "playwright", "pip_name": "playwright", "label": "Playwright"},
     {"import_name": "dotenv", "pip_name": "python-dotenv", "label": "python-dotenv"},
@@ -102,12 +104,12 @@ def check_ffmpeg() -> dict[str, Any]:
     }
 
 
-def check_pip_package(import_name: str, pip_name: str, label: str) -> dict[str, Any]:
+def check_pip_package(import_name: str, pip_name: str, label: str, required: bool = True) -> dict[str, Any]:
     available, version = module_available(import_name)
     return {
         "id": pip_name,
         "label": label,
-        "required": True,
+        "required": required,
         "available": available,
         "version": version if available else None,
         "detail": {"import": import_name, "pip": pip_name},
@@ -177,7 +179,10 @@ def check_playwright_browser() -> dict[str, Any]:
 def collect_checks() -> list[dict[str, Any]]:
     checks = [check_python(), check_ffmpeg()]
     checks.extend(
-        check_pip_package(item["import_name"], item["pip_name"], item["label"])
+        check_pip_package(
+            item["import_name"], item["pip_name"], item["label"],
+            required=item.get("required", True),
+        )
         for item in PIP_PACKAGES
     )
     checks.append(check_nvidia_optional())
