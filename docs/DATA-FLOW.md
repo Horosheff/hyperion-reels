@@ -65,8 +65,18 @@ publish-selection → covers → publish-queue (атомарные записи 
 | `VIDEOSHORTS_QUEUE_TIMEOUT` | 600 с | запись publish-queue из UI |
 | `VIDEOSHORTS_PIPELINE_STEP_TIMEOUT` | 10800 с | стадия `run_pipeline.py` (legacy) |
 | `VIDEOSHORTS_AGENT_MODE` | — | `1/true/agent` — обязательные agent-решения |
+| `VIDEOSHORTS_JEV_SCORES` | unset/`0` | `1/true` — clip-scores через TypeSafe Jev (`scripts/jev_score_clips.py` / `score_clips.py --jev`); иначе прежний путь (агент Write или `--heuristic`) |
+| `TYPESAFE_API_KEY` | — | ключ TypeSafe (env или `videoshorts.local.env`, не коммитить); нужен только при Jev scores |
+| `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | опционально override API root |
 | `VIDEOSHORTS_SHARPEN` | 1 | `0` — отключить unsharp после даунскейла |
 | `VIDEOSHORTS_COLOR_GRADE` | 1 | `0` — отключить HDR→SDR тонемаппинг / SDR-грейд |
+
+### Jev clip-scores (pilot)
+
+- Scope: только шаг scorekeeper / `moments/clip-scores.json`. Whisper, cutter, subtitles, publish — без изменений.
+- CLI: `python scripts/jev_score_clips.py <moments.json> <transcript.json> -o moments/clip-scores.json --min 30 --max 60`
+- Метаданные: `scoring_engine=jev`, `decision_source=agent`, `authored_by=videoshorts-editor` (совместимо с agent gate).
+- Editor после Jev всё ещё пишет `editor-review.json` + `virality-review.json`.
 
 ## Видео-качество (Q1/Q2, рендер-слой)
 

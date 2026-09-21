@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""VideoShorts — оценка выбранных моментов перед уточнением границ."""
+"""VideoShorts — оценка выбранных моментов перед уточнением границ.
+
+Default: local regex/heuristic draft (--heuristic only).
+Jev path: --jev or VIDEOSHORTS_JEV_SCORES=1 + TYPESAFE_API_KEY → TypeSafe scores
+(see jev_score_clips.py). Rollback: unset flag / VIDEOSHORTS_JEV_SCORES=0.
+"""
 from __future__ import annotations
 
 import argparse
@@ -11,6 +16,7 @@ from pathlib import Path
 
 from videoshorts_core import analyze_hook_quality_2026, clips_from_json, configure_stdio, segments_from_json
 from agent_artifact_guard import add_decision_mode_args, enforce_decision_mode, stamp_heuristic
+from typesafe_client import jev_scores_enabled
 
 configure_stdio()
 
@@ -235,10 +241,45 @@ def main() -> None:
     parser.add_argument("-o", "--output", type=Path, default=None)
     parser.add_argument("--min", type=float, default=30, dest="min_sec")
     parser.add_argument("--max", type=float, default=60, dest="max_sec")
+    parser.add_argument(
+        "--authored-by",
+        default="videoshorts-editor",
+        help="For --jev: authored_by stamp (default videoshorts-editor)",
+    )
     add_decision_mode_args(parser)
     args = parser.parse_args()
-    _artifact_path = args.output or (args.moments.parent / 'clip-scores.json')
-    enforce_decision_mode(args, kind='clip-scores', path=_artifact_path)
+    _artifact_path = args.output or (args.moments.parent / "clip-scores.json")
+
+    # Env flag auto-enables Jev unless local --heuristic diagnostic is requested.
+    use_jev = bool(getattr(args, "jev", False)) or (
+        jev_scores_enabled() and not getattr(args, "heuristic", False)
+    )
+    if use_jev:
+        args.jev = True
+
+    enforce_decision_mode(args, kind="clip-scores", path=_artifact_path)
+
+    if getattr(args, "jev", False) and not getattr(args, "heuristic", False):
+        from jev_score_clips import score_moments_file
+        from typesafe_client import TypeSafeApiError
+
+        out = Path(_artifact_path)
+        try:
+            payload = score_moments_file(
+                args.moments,
+                args.transcript,
+                min_sec=args.min_sec,
+                max_sec=args.max_sec,
+                authored_by=args.authored_by,
+            )
+        except (TypeSafeApiError, FileNotFoundError, ValueError) as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            sys.exit(1)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"✅ Jev clip scores: {out}")
+        print(f"   pass={payload['summary']['passed']} reject={payload['summary']['rejected']}")
+        return
 
     if not args.moments.is_file() or not args.transcript.is_file():
         print("[ERROR] moments or transcript not found", file=sys.stderr)
@@ -265,7 +306,7 @@ def main() -> None:
     }
     out = args.output or (args.moments.parent / "clip-scores.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(stamp_heuristic(payload, 'score_clips'), ensure_ascii=False, indent=2), encoding="utf-8")
+    out.write_text(json.dumps(stamp_heuristic(payload, "score_clips"), ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"✅ Clip scores: {out}")
     print(f"   pass={payload['summary']['passed']} reject={payload['summary']['rejected']}")
 

@@ -14,6 +14,29 @@ description: Единый редактор Shorts — scores + keep/reject + vir
 
 Эвристические `score_clips.py` / `editor_review.py` / `virality_review.py` — только local `--heuristic`, не твой путь.
 
+### Jev scores (pilot)
+
+Если `VIDEOSHORTS_JEV_SCORES=1` **и** задан `TYPESAFE_API_KEY` (env или `videoshorts.local.env`):
+
+1. **Не** выдумывай числа для `clip-scores.json` сам.
+2. Запусти Jev-скорер (text-only, без видео):
+
+```bash
+cd scripts
+python jev_score_clips.py "../videoshorts-memory/moments/<stem>-moments.json" \
+  "../videoshorts-memory/transcripts/<stem>/transcript.json" \
+  -o "../videoshorts-memory/moments/clip-scores.json" \
+  --min <brief.min_sec> --max <brief.max_sec>
+```
+
+Эквивалент: `python score_clips.py … --jev` (или env-флаг без `--heuristic`).
+
+3. Проверь: `python validate_agent_artifacts.py clip-scores "../videoshorts-memory/moments/clip-scores.json"`.
+4. Артефакт уже с `decision_source=agent`, `authored_by=videoshorts-editor`, `scoring_engine=jev`.
+5. **Ты по-прежнему** пишешь `editor-review.json` и `virality-review.json` сам (Jev заполняет только clip-scores).
+
+Rollback: `VIDEOSHORTS_JEV_SCORES=0` / unset → снова оценивай scores сам (Write), без Jev.
+
 ## Вход
 
 - `moments/<stem>-moments.json` (и/или draft `clip-decisions.json`)
