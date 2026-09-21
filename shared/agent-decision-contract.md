@@ -17,6 +17,7 @@
 ## Запрещено в Agent mode
 
 - Запускать `write_metadata.py`, `score_clips.py`, `editor_review.py`, `find_moments.py` и т.п. **без** `--heuristic` как «сделай за меня».
+  Исключение (pilot): `score_clips.py --jev` / `jev_score_clips.py` при `VIDEOSHORTS_JEV_SCORES=1` + `TYPESAFE_API_KEY` — пишет только `clip-scores.json` с `scoring_engine=jev` (editor-review / virality-review агент пишет сам).
 - Считать `local_heuristic_draft` финальным решением.
 - Ставить `selected_by_agent=true` без реальной редакторской проверки.
 

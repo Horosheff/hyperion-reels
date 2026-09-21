@@ -32,11 +32,31 @@ def stamp_heuristic(data: dict, script_name: str) -> dict:
     return payload
 
 
+def stamp_jev(data: dict, *, authored_by: str = "videoshorts-editor") -> dict:
+    """Stamp clip-scores from TypeSafe Jev as agent-compatible (scoring_engine=jev).
+
+    Editor/scorekeeper still owns editor-review / virality-review; Jev only fills scores.
+    """
+    payload = dict(data)
+    payload["decision_source"] = "agent"
+    payload["authored_by"] = authored_by if str(authored_by).startswith("videoshorts-") else "videoshorts-editor"
+    payload["scoring_engine"] = "jev"
+    payload["note"] = payload.get("note") or (
+        "Scores from TypeSafe Jev (text-only). Agent still writes editor-review + virality-review."
+    )
+    return payload
+
+
 def add_decision_mode_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--heuristic",
         action="store_true",
         help="Local diagnostic only. Agents must Write JSON themselves.",
+    )
+    parser.add_argument(
+        "--jev",
+        action="store_true",
+        help="Score via TypeSafe Jev (clip-scores only). Requires TYPESAFE_API_KEY.",
     )
     parser.add_argument(
         "--validate",
@@ -58,6 +78,10 @@ def enforce_decision_mode(args: argparse.Namespace, *, kind: str, path: Path) ->
         for err in errors:
             print(f"[ERROR] {err}", file=sys.stderr)
         raise SystemExit(2)
+
+    # --jev is an authorized agent tooling path for clip-scores (not bare heuristic).
+    if getattr(args, "jev", False):
+        return
 
     if not getattr(args, "heuristic", False):
         print(REFUSAL.format(kind=kind, path=path), file=sys.stderr)
